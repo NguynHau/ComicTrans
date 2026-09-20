@@ -5,6 +5,7 @@ import { OrientationLock } from './components/OrientationLock';
 import { UrlInputCard } from './components/UrlInputCard';
 import { JobProgressCard } from './components/JobProgressCard';
 import { MangaReader } from './components/MangaReader';
+import { SavedMangaViewer } from './components/SavedMangaViewer';
 import { ApiDocsModal } from './components/ApiDocsModal';
 import { SettingsModal } from './components/SettingsModal';
 import { UpdateModal } from './components/UpdateModal';
@@ -33,6 +34,7 @@ export function App() {
 
   const [activeTab, setActiveTab] = useState<'home' | 'manga' | 'update' | 'settings'>('home');
   const [recents, setRecents] = useState<RecentItem[]>([]);
+  const [selectedSavedManga, setSelectedSavedManga] = useState<RecentItem | null>(null);
 
   // Update checking state
   const [checkingUpdate, setCheckingUpdate] = useState(false);
@@ -573,10 +575,7 @@ export function App() {
                 {recents.map((item) => (
                   <div
                     key={item.id}
-                    onClick={() => {
-                      handleResumeRecent(item);
-                      setActiveTab('home');
-                    }}
+                    onClick={() => setSelectedSavedManga(item)}
                     className="group relative flex gap-3 p-3 bg-[#141417] hover:bg-[#1c1c22] border border-zinc-800 hover:border-zinc-700/80 rounded-xl transition-all cursor-pointer shadow-md"
                   >
                     {/* Thumbnail */}
@@ -834,6 +833,14 @@ export function App() {
         activeTab={activeTab}
         onChangeTab={(tabId) => setActiveTab(tabId as any)}
       />
+
+      {/* Saved Manga Scroll Viewer Modal */}
+      {selectedSavedManga && (
+        <SavedMangaViewer
+          item={selectedSavedManga}
+          onClose={() => setSelectedSavedManga(null)}
+        />
+      )}
     </div>
   );
 }

@@ -104,18 +104,26 @@ export const MangaReader: React.FC<MangaReaderProps> = ({
 
         {/* Container 2: Lưu trữ button */}
         <div className="flex-shrink-0">
-          <button
-            onClick={handleSaveArchive}
-            className={`py-2.5 px-4 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-md ${
-              savedSuccess
-                ? 'bg-emerald-600 text-white'
-                : 'bg-[#141417] hover:bg-zinc-800 text-zinc-200 border border-zinc-700/80'
-            }`}
-            title="Lưu bản dịch vào máy và hiển thị ở tab Truyện"
-          >
-            <BookmarkCheck className="w-4 h-4 text-orange-400 flex-shrink-0" />
-            <span>{savedSuccess ? 'Đã lưu!' : 'Lưu trữ'}</span>
-          </button>
+          {(() => {
+            const isAllCompleted = pages.length > 0 && pages.every(p => p.status === 'completed' && !!(p.processed_image || p.source_image));
+            return (
+              <button
+                onClick={handleSaveArchive}
+                disabled={!isAllCompleted}
+                className={`py-2.5 px-4 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-md ${
+                  !isAllCompleted
+                    ? 'opacity-40 cursor-not-allowed bg-zinc-900 text-zinc-500 border border-zinc-800'
+                    : savedSuccess
+                    ? 'bg-emerald-600 text-white'
+                    : 'bg-[#141417] hover:bg-zinc-800 text-zinc-200 border border-zinc-700/80'
+                }`}
+                title={!isAllCompleted ? "Vui lòng chờ AI dịch xong tất cả các trang mới có thể lưu trữ" : "Lưu bản dịch vào máy và hiển thị ở tab Truyện"}
+              >
+                <BookmarkCheck className={`w-4 h-4 flex-shrink-0 ${isAllCompleted ? 'text-orange-400' : 'text-zinc-600'}`} />
+                <span>{savedSuccess ? 'Đã lưu!' : 'Lưu trữ'}</span>
+              </button>
+            );
+          })()}
         </div>
       </div>
 
