@@ -6,6 +6,7 @@ import { UrlInputCard } from './components/UrlInputCard';
 import { JobProgressCard } from './components/JobProgressCard';
 import { MangaReader } from './components/MangaReader';
 import { SavedMangaViewer } from './components/SavedMangaViewer';
+import { FolderChaptersModal } from './components/FolderChaptersModal';
 import { ApiDocsModal } from './components/ApiDocsModal';
 import { SettingsModal } from './components/SettingsModal';
 import { UpdateModal } from './components/UpdateModal';
@@ -13,7 +14,7 @@ import { MangaJob, MangaPage, RecentItem, MangaFolder, DetailedError } from './t
 import { 
   RefreshCw, BookOpen, Key, Sparkles, ShieldCheck, 
   CheckCircle2, AlertCircle, ArrowUpCircle, ExternalLink,
-  Folder, Plus, FolderPlus
+  Folder, Plus, FolderPlus, Trash2
 } from 'lucide-react';
 import {
   extractComicImagesClient,
@@ -46,6 +47,7 @@ export function App() {
   const [isCreateFolderModalOpen, setIsCreateFolderModalOpen] = useState(false);
   const [newFolderNameInput, setNewFolderNameInput] = useState('');
   const [selectedSavedManga, setSelectedSavedManga] = useState<RecentItem | null>(null);
+  const [activeFolderForSheet, setActiveFolderForSheet] = useState<{ id: string; name: string } | null>(null);
 
   // Update checking state
   const [checkingUpdate, setCheckingUpdate] = useState(false);
@@ -626,137 +628,75 @@ export function App() {
                 </button>
               </div>
             ) : (
-              <div className="space-y-4 max-h-[65vh] overflow-y-auto pr-1">
-                {/* Folders List */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 max-h-[65vh] overflow-y-auto pr-1">
+                {/* Folder Cards */}
                 {folders.map((folder) => {
-                  const folderChapters = recents.filter(r => r.folderId === folder.id);
+                  const folderChapters = recents.filter((r) => r.folderId === folder.id);
+                  const latestThumbnail = folderChapters[0]?.thumbnail;
+
                   return (
-                    <div key={folder.id} className="bg-[#141417]/80 border border-zinc-800 rounded-2xl p-4 space-y-3 shadow-lg">
-                      <div className="flex items-center justify-between border-b border-zinc-800/80 pb-2.5">
-                        <div className="flex items-center gap-2">
-                          <Folder className="w-4 h-4 text-[#e06b3a]" />
-                          <h3 className="text-sm font-extrabold text-zinc-100">{folder.name}</h3>
-                          <span className="text-[10px] bg-zinc-800 text-zinc-400 px-2 py-0.5 rounded-full font-medium">
-                            {folderChapters.length} chương
-                          </span>
+                    <div
+                      key={folder.id}
+                      onClick={() => setActiveFolderForSheet({ id: folder.id, name: folder.name })}
+                      className="group bg-[#141417]/90 hover:bg-[#1a1a20] border border-zinc-800 hover:border-zinc-700/80 rounded-2xl p-4 flex items-center justify-between gap-3 transition-all cursor-pointer shadow-lg hover:shadow-orange-950/10"
+                    >
+                      <div className="flex items-center gap-3.5 min-w-0">
+                        <div className="w-12 h-14 bg-zinc-900 rounded-xl overflow-hidden flex-shrink-0 border border-zinc-800 flex items-center justify-center text-[#e06b3a]">
+                          {latestThumbnail ? (
+                            <img
+                              src={latestThumbnail}
+                              alt={folder.name}
+                              referrerPolicy="no-referrer"
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                            />
+                          ) : (
+                            <Folder className="w-6 h-6" />
+                          )}
                         </div>
-                        <button
-                          type="button"
-                          onClick={(e) => handleDeleteFolder(folder.id, e)}
-                          className="text-zinc-500 hover:text-rose-400 p-1 rounded-lg transition-colors"
-                          title="Xóa thư mục"
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                          </svg>
-                        </button>
+                        <div className="min-w-0 space-y-1">
+                          <h3 className="text-sm font-extrabold text-zinc-100 truncate group-hover:text-[#e06b3a] transition-colors">
+                            {folder.name}
+                          </h3>
+                          <p className="text-[11px] text-zinc-400 font-semibold flex items-center gap-1.5">
+                            <span className="px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300 font-mono text-[10px]">
+                              {folderChapters.length} chương
+                            </span>
+                          </p>
+                        </div>
                       </div>
 
-                      {folderChapters.length === 0 ? (
-                        <p className="text-xs text-zinc-500 italic py-2 text-center">
-                          Chưa có chương nào trong thư mục này. Bấm "Lưu trữ" khi dịch để thêm vào đây.
-                        </p>
-                      ) : (
-                        <div className="space-y-2">
-                          {folderChapters.map((item) => (
-                            <div
-                              key={item.id}
-                              onClick={() => setSelectedSavedManga(item)}
-                              className="group relative flex gap-3 p-3 bg-[#0d0d0f] hover:bg-[#1c1c22] border border-zinc-800/80 hover:border-zinc-700/80 rounded-xl transition-all cursor-pointer shadow-md"
-                            >
-                              <div className="w-12 h-16 bg-zinc-900 rounded-lg overflow-hidden flex-shrink-0 border border-zinc-800">
-                                {item.thumbnail ? (
-                                  <img
-                                    src={item.thumbnail}
-                                    alt={item.title}
-                                    referrerPolicy="no-referrer"
-                                    className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                                  />
-                                ) : (
-                                  <div className="w-full h-full flex items-center justify-center text-zinc-600">
-                                    <BookOpen className="w-5 h-5" />
-                                  </div>
-                                )}
-                              </div>
-                              <div className="flex-1 min-w-0 flex flex-col justify-between py-0.5">
-                                <div className="space-y-0.5">
-                                  <h4 className="text-xs font-bold text-zinc-200 truncate group-hover:text-[#e06b3a] transition-colors pr-6">
-                                    {item.title}
-                                  </h4>
-                                  <p className="text-[10px] text-zinc-400">
-                                    Đã dịch: <span className="text-emerald-400 font-medium">{item.completedPages}/{item.totalPages} trang</span>
-                                  </p>
-                                </div>
-                                <p className="text-[10px] text-zinc-500 font-medium">{item.timestamp}</p>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={(e) => handleDeleteRecent(item.id, e)}
-                                className="absolute top-2.5 right-2.5 p-1.5 rounded-lg text-zinc-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
-                                title="Xóa chương này"
-                              >
-                                <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                </svg>
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      )}
+                      <button
+                        type="button"
+                        onClick={(e) => handleDeleteFolder(folder.id, e)}
+                        className="text-zinc-500 hover:text-rose-400 p-2 rounded-xl hover:bg-rose-500/10 transition-colors flex-shrink-0"
+                        title="Xóa thư mục"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                     </div>
                   );
                 })}
 
-                {/* Uncategorized chapters */}
-                {recents.filter(r => !r.folderId || !folders.some(f => f.id === r.folderId)).length > 0 && (
-                  <div className="bg-[#141417]/80 border border-zinc-800 rounded-2xl p-4 space-y-3 shadow-lg">
-                    <div className="border-b border-zinc-800/80 pb-2.5">
-                      <h3 className="text-sm font-extrabold text-zinc-300">Chương chưa phân loại</h3>
-                    </div>
-                    <div className="space-y-2">
-                      {recents.filter(r => !r.folderId || !folders.some(f => f.id === r.folderId)).map((item) => (
-                        <div
-                          key={item.id}
-                          onClick={() => setSelectedSavedManga(item)}
-                          className="group relative flex gap-3 p-3 bg-[#0d0d0f] hover:bg-[#1c1c22] border border-zinc-800/80 hover:border-zinc-700/80 rounded-xl transition-all cursor-pointer shadow-md"
-                        >
-                          <div className="w-12 h-16 bg-zinc-900 rounded-lg overflow-hidden flex-shrink-0 border border-zinc-800">
-                            {item.thumbnail ? (
-                              <img
-                                src={item.thumbnail}
-                                alt={item.title}
-                                referrerPolicy="no-referrer"
-                                className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                              />
-                            ) : (
-                              <div className="w-full h-full flex items-center justify-center text-zinc-600">
-                                <BookOpen className="w-5 h-5" />
-                              </div>
-                            )}
-                          </div>
-                          <div className="flex-1 min-w-0 flex flex-col justify-between py-0.5">
-                            <div className="space-y-0.5">
-                              <h4 className="text-xs font-bold text-zinc-200 truncate group-hover:text-[#e06b3a] transition-colors pr-6">
-                                {item.title}
-                              </h4>
-                              <p className="text-[10px] text-zinc-400">
-                                Đã dịch: <span className="text-emerald-400 font-medium">{item.completedPages}/{item.totalPages} trang</span>
-                              </p>
-                            </div>
-                            <p className="text-[10px] text-zinc-500 font-medium">{item.timestamp}</p>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={(e) => handleDeleteRecent(item.id, e)}
-                            className="absolute top-2.5 right-2.5 p-1.5 rounded-lg text-zinc-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
-                            title="Xóa chương này"
-                          >
-                            <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                            </svg>
-                          </button>
-                        </div>
-                      ))}
+                {/* Uncategorized Folder Card */}
+                {recents.filter((r) => !r.folderId || !folders.some((f) => f.id === r.folderId)).length > 0 && (
+                  <div
+                    onClick={() => setActiveFolderForSheet({ id: 'uncategorized', name: 'Chương chưa phân loại' })}
+                    className="group bg-[#141417]/90 hover:bg-[#1a1a20] border border-zinc-800 hover:border-zinc-700/80 rounded-2xl p-4 flex items-center justify-between gap-3 transition-all cursor-pointer shadow-lg"
+                  >
+                    <div className="flex items-center gap-3.5 min-w-0">
+                      <div className="w-12 h-14 bg-zinc-900 rounded-xl overflow-hidden flex-shrink-0 border border-zinc-800 flex items-center justify-center text-[#e06b3a]">
+                        <BookOpen className="w-6 h-6" />
+                      </div>
+                      <div className="min-w-0 space-y-1">
+                        <h3 className="text-sm font-extrabold text-zinc-200 truncate group-hover:text-[#e06b3a] transition-colors">
+                          Chưa phân loại
+                        </h3>
+                        <p className="text-[11px] text-zinc-400 font-semibold">
+                          <span className="px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300 font-mono text-[10px]">
+                            {recents.filter((r) => !r.folderId || !folders.some((f) => f.id === r.folderId)).length} chương
+                          </span>
+                        </p>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -972,11 +912,32 @@ export function App() {
         onChangeTab={(tabId) => setActiveTab(tabId as any)}
       />
 
+      {/* Folder 3/4 Bottom Sheet Modal */}
+      {activeFolderForSheet && (
+        <FolderChaptersModal
+          folderName={activeFolderForSheet.name}
+          chapters={
+            activeFolderForSheet.id === 'uncategorized'
+              ? recents.filter((r) => !r.folderId || !folders.some((f) => f.id === r.folderId))
+              : recents.filter((r) => r.folderId === activeFolderForSheet.id)
+          }
+          onClose={() => setActiveFolderForSheet(null)}
+          onSelectChapter={(item) => setSelectedSavedManga(item)}
+          onDeleteChapter={(id, e) => handleDeleteRecent(id, e)}
+        />
+      )}
+
       {/* Saved Manga Scroll Viewer Modal */}
       {selectedSavedManga && (
         <SavedMangaViewer
           item={selectedSavedManga}
+          allFolderItems={
+            selectedSavedManga.folderId
+              ? recents.filter((r) => r.folderId === selectedSavedManga.folderId)
+              : recents.filter((r) => !r.folderId || !folders.some((f) => f.id === r.folderId))
+          }
           onClose={() => setSelectedSavedManga(null)}
+          onSelectChapter={(item) => setSelectedSavedManga(item)}
         />
       )}
 
