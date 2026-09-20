@@ -115,6 +115,7 @@ export function App() {
       // 4. Process each page sequentially
       let completedCount = 0;
       let lastFailureError: DetailedError | null = null;
+      let currentPagesArray = [...initialPages];
 
       for (let i = 0; i < initialPages.length; i++) {
         // Double check cancellation
@@ -131,32 +132,35 @@ export function App() {
         } : prev);
 
         // Update page status to processing
-        setPages(prev => prev.map(p => p.id === page.id ? { ...p, status: 'processing' } : p));
+        currentPagesArray = currentPagesArray.map(p => p.id === page.id ? { ...p, status: 'processing' } : p);
+        setPages(currentPagesArray);
 
         try {
           // Perform OCR and translation
-          const { ocr_results, translations } = await runOcrAndTranslationClient(
+          const { ocr_results, translations, jpegBase64 } = await runOcrAndTranslationClient(
             page.source_image,
             sourceLang,
             targetLang,
             apiKey
           );
 
-          // Render inpainted + translated image
+          // Render inpainted + translated image using the Base64 Data URL
           const processed_image = await renderInpaintedTranslatedImageClient(
-            page.source_image,
+            jpegBase64 || page.source_image,
             ocr_results,
             translations
           );
 
           // Update page to completed
-          setPages(prev => prev.map(p => p.id === page.id ? {
+          currentPagesArray = currentPagesArray.map(p => p.id === page.id ? {
             ...p,
             status: 'completed',
             ocr_results,
             translations,
             processed_image,
-          } : p));
+            source_image: jpegBase64 || p.source_image, // Cache loaded image data URL
+          } : p);
+          setPages(currentPagesArray);
 
           completedCount++;
           
@@ -172,12 +176,13 @@ export function App() {
           lastFailureError = classified;
 
           // Update page to failed with classified details
-          setPages(prev => prev.map(p => p.id === page.id ? {
+          currentPagesArray = currentPagesArray.map(p => p.id === page.id ? {
             ...p,
             status: 'failed',
             error_message: classified.message,
             detailed_error: classified,
-          } : p));
+          } : p);
+          setPages(currentPagesArray);
 
           // If API Key is invalid or missing, stop the loop immediately instead of hammering repeatedly
           if (classified.category === 'API_KEY_INVALID' || classified.category === 'API_KEY_MISSING') {
@@ -195,7 +200,7 @@ export function App() {
               ? (url.split('/').filter(Boolean).pop()?.replace(/[-_]/g, ' ') || 'Chương truyện')
               : 'Tệp tải lên cá nhân',
             sourceUrl: url,
-            thumbnail: resolvedImages[0],
+            thumbnail: currentPagesArray[0]?.processed_image || resolvedImages[0],
             totalPages: resolvedImages.length,
             completedPages: completedCount,
             timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
@@ -205,7 +210,7 @@ export function App() {
               completed_pages: completedCount,
               total_pages: resolvedImages.length,
             },
-            pages: initialPages,
+            pages: currentPagesArray,
           };
           const stored = localStorage.getItem('COMIC_TRANS_RECENTS');
           const list: RecentItem[] = stored ? JSON.parse(stored) : [];

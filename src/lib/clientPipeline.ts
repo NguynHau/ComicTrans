@@ -298,10 +298,10 @@ export async function ensureImageAsJpegBase64(imageUrl: string): Promise<string>
 
 // Available Gemini models ordered by priority with automatic fallback on quota/rate-limits
 const CANDIDATE_GEMINI_MODELS = [
-  'gemini-3.8-flash',
   'gemini-3.6-flash',
-  'gemini-3.5-flash',
   'gemini-3.1-flash-lite',
+  'gemini-3.5-flash',
+  'gemini-3.8-flash',
 ];
 
 // Direct client-side Gemini Vision OCR & Translation API connector
@@ -310,7 +310,7 @@ export async function runOcrAndTranslationClient(
   sourceLang: string,
   targetLang: string,
   apiKey: string
-): Promise<{ ocr_results: OCRBoxItem[]; translations: TranslationItem[]; model_used?: string }> {
+): Promise<{ ocr_results: OCRBoxItem[]; translations: TranslationItem[]; model_used?: string; jpegBase64: string }> {
   const cleanApiKey = apiKey.trim();
   if (!cleanApiKey) {
     throw new Error('API_KEY_MISSING: Chưa tìm thấy Gemini API Key. Vui lòng vào Cài đặt để thêm API Key.');
@@ -496,7 +496,7 @@ Return a valid JSON array of all detected speech bubbles.`;
         });
       });
 
-      return { ocr_results, translations, model_used: model };
+      return { ocr_results, translations, model_used: model, jpegBase64 };
     } catch (err: any) {
       if (
         err.message?.includes('API_KEY_INVALID') ||
@@ -515,10 +515,14 @@ Return a valid JSON array of all detected speech bubbles.`;
 // Client-Side Canvas-based Inpainting and Text Render
 // This function replaces the backend server's SVG + Sharp rendering flow.
 export async function renderInpaintedTranslatedImageClient(
-  sourceImageBase64: string,
+  sourceImageInput: string,
   ocrResults: OCRBoxItem[],
   translations: TranslationItem[]
 ): Promise<string> {
+  const sourceImageBase64 = sourceImageInput.startsWith('data:')
+    ? sourceImageInput
+    : await ensureImageAsJpegBase64(sourceImageInput);
+
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.crossOrigin = 'anonymous'; // Avoid tainted canvas
@@ -560,51 +564,44 @@ export async function renderInpaintedTranslatedImageClient(
 
           ctx.save();
 
-          // A. Inpainting: Draw background shape slightly inset to preserve original boundary line
-          const insetX = Math.max(2, w * 0.03);
-          const insetY = Math.max(2, h * 0.03);
-
-          ctx.fillStyle = bgColor;
+          // A. Inpainting: Solid white background covering exact speech bubble position
+          ctx.fillStyle = '#ffffff';
           if (bubbleShape === 'rectangle') {
-            const rx = x + insetX;
-            const ry = y + insetY;
-            const rw = Math.max(5, w - insetX * 2);
-            const rh = Math.max(5, h - insetY * 2);
+            const rw = Math.max(6, w);
+            const rh = Math.max(6, h);
             ctx.beginPath();
-            ctx.roundRect(rx, ry, rw, rh, 8);
+            ctx.roundRect(x, y, rw, rh, Math.min(10, Math.min(w, h) * 0.2));
             ctx.fill();
           } else {
             const cx = x + w / 2;
             const cy = y + h / 2;
-            const rx = Math.max(2, w / 2 - insetX);
-            const ry = Math.max(2, h / 2 - insetY);
+            const rx = Math.max(3, w / 2);
+            const ry = Math.max(3, h / 2);
             ctx.beginPath();
             ctx.ellipse(cx, cy, rx, ry, 0, 0, 2 * Math.PI);
             ctx.fill();
           }
 
-          // B. Typesetting & Render Translated Text
+          // B. Typesetting & Render Translated Text in Crisp Black
           const layout = layoutDialogueText(textToRender, w, h);
-          ctx.font = `900 ${layout.fontSize}px 'Segoe UI', Arial, sans-serif`;
+          ctx.font = `700 ${layout.fontSize}px 'Plus Jakarta Sans', 'Segoe UI', Arial, sans-serif`;
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
 
-          // Black outline/stroke & White fill parameters
-          const strokeWidth = Math.max(2.5, layout.fontSize * 0.18);
-          ctx.strokeStyle = '#000000';
-          ctx.lineWidth = strokeWidth;
+          // Solid black text with subtle white halo for crisp readability
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = Math.max(1.5, layout.fontSize * 0.12);
           ctx.lineJoin = 'round';
-          ctx.fillStyle = '#ffffff';
+          ctx.fillStyle = '#0a0a0c'; // High-contrast black text
 
           const cx = x + w / 2;
           const cy = y + h / 2;
           const lineHeight = layout.lineHeight;
           const totalH = layout.totalH;
 
-          let currentY = cy - (totalH / 2) + (lineHeight / 2);
+          let currentY = cy - totalH / 2 + lineHeight / 2;
 
           layout.lines.forEach((line) => {
-            // Draw stroke first to place outline behind text, then fill with white
             ctx.strokeText(line, cx, currentY);
             ctx.fillText(line, cx, currentY);
             currentY += lineHeight;
