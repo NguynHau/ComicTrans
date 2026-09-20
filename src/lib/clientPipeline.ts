@@ -61,62 +61,7 @@ export function layoutDialogueText(
   return { fontSize, lines, lineHeight, totalH };
 }
 
-// Image dimension & aspect ratio verifier to eliminate ads, thumbnails, and small web icons
-export async function filterRealMangaImages(candidates: string[]): Promise<string[]> {
-  if (candidates.length === 0) return [];
-
-  const checkImage = (src: string): Promise<{ src: string; valid: boolean }> => {
-    return new Promise((resolve) => {
-      const img = new Image();
-      let resolved = false;
-
-      const done = (valid: boolean) => {
-        if (!resolved) {
-          resolved = true;
-          resolve({ src, valid });
-        }
-      };
-
-      const timer = setTimeout(() => done(false), 3500);
-
-      img.onload = () => {
-        clearTimeout(timer);
-        const w = img.naturalWidth || img.width || 0;
-        const h = img.naturalHeight || img.height || 0;
-
-        // Validation requirements for a true manga page:
-        // 1. Minimum width >= 280px and height >= 320px
-        const isMinSize = w >= 280 && h >= 320;
-        // 2. Substantial surface area >= 90,000 sq px (e.g., 300x300, 280x350+)
-        const isSubstantialArea = (w * h) >= 90000;
-        // 3. Aspect ratio (h / w) >= 0.35 (filters out horizontal ad banners like 728x90, 970x90, 320x100)
-        const isNotHorizontalBanner = (h / w) >= 0.35;
-        // 4. Exclude small square thumbnails (e.g., 100x100, 150x150, 200x200)
-        const isSmallSquare = (w === h && w < 400);
-
-        const valid = isMinSize && isSubstantialArea && isNotHorizontalBanner && !isSmallSquare;
-        done(valid);
-      };
-
-      img.onerror = () => {
-        clearTimeout(timer);
-        done(false);
-      };
-
-      img.src = src;
-    });
-  };
-
-  // Check candidates in parallel
-  const results = await Promise.all(candidates.map(checkImage));
-  const validCandidates = results.filter((r) => r.valid).map((r) => r.src);
-
-  // If dimension checking validated at least 1 image, return those clean images.
-  // Fallback to candidate list if CORS network errors prevented image load checks.
-  return validCandidates.length > 0 ? validCandidates : candidates;
-}
-
-// Scraping function using client-side fallback with multiple CORS proxies
+// Scraping function using client-side fallback with multiple CORS proxies (Old-style simple scraper)
 export async function extractComicImagesClient(url: string): Promise<{ title: string; images: string[] }> {
   let targetUrl = url.trim();
   if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) {
@@ -193,148 +138,54 @@ export async function extractComicImagesClient(url: string): Promise<{ title: st
   const rawCandidates: string[] = [];
   const seen = new Set<string>();
 
-  // Strict Exclusion Patterns
-  const excludePatterns = [
-    /logo/i, /avatar/i, /icon/i, /banner/i, /advert/i, /ad[s]?[\._\-\/]/i,
-    /fb_share/i, /widget/i, /favicon/i, /1x1/i, /pixel/i, /dflazy/i, /emoji/i,
-    /cover/i, /thumb/i, /thumbnail/i, /small/i, /poster/i, /sidebar/i, /button/i,
-    /facebook/i, /twitter/i, /telegram/i, /discord/i, /donate/i, /qr/i, /bank/i,
-    /st\.nettruyen/i, /st\.truyenqq/i, /gravatar/i, /disqus/i, /recaptcha/i,
-    /badge/i, /rating/i, /star/i, /comment/i, /user/i, /author/i, /profile/i,
-    /\.svg(\?.*)?$/i, /\.gif(\?.*)?$/i,
+  // Basic Exclusion Patterns (basic non-manga file types)
+  const basicExcludePatterns = [
+    /favicon/i, /logo/i, /avatar/i, /\.svg(\?.*)?$/i, /\.gif(\?.*)?$/i,
   ];
 
-  // Attempt DOM parsing if string contains HTML
-  let extractedFromReaderContainer = false;
-  if (typeof DOMParser !== 'undefined' && htmlOrMd.includes('<')) {
-    try {
-      const parser = new DOMParser();
-      const doc = parser.parseFromString(htmlOrMd, 'text/html');
-
-      // Common manga chapter reading container selectors
-      const readerContainerSelectors = [
-        '#chapter-content',
-        '.reading-detail',
-        '.vng-comic-content',
-        '.page-chapter',
-        '.reading-content',
-        '.chap-content',
-        '.chapter-c',
-        '#readerarea',
-        '.reader-content',
-        '.container-chapter-reader',
-        '#arraydata',
-        '.box-chap',
-        '#viewer',
-        '.chapter-content',
-        '.comic-page',
-        '.read-content',
-        '.entry-content',
-        '#chapter_content',
-        '#reading-detail'
-      ];
-
-      let readerContainer: Element | null = null;
-      for (const sel of readerContainerSelectors) {
-        const found = doc.querySelector(sel);
-        if (found && found.querySelectorAll('img').length > 0) {
-          readerContainer = found;
-          break;
-        }
-      }
-
-      // If a dedicated reader container is found, ONLY extract images from inside it!
-      if (readerContainer) {
-        extractedFromReaderContainer = true;
-        const imgs = readerContainer.querySelectorAll('img');
-        imgs.forEach((imgTag) => {
-          let src =
-            imgTag.getAttribute('data-srcset') ||
-            imgTag.getAttribute('srcset') ||
-            imgTag.getAttribute('data-src') ||
-            imgTag.getAttribute('data-original') ||
-            imgTag.getAttribute('data-lazy-src') ||
-            imgTag.getAttribute('data-url') ||
-            imgTag.getAttribute('data-cdn') ||
-            imgTag.getAttribute('src') ||
-            '';
-
-          if (src.includes(',')) {
-            src = src.split(',')[0].trim().split(/\s+/)[0];
-          }
-
-          if (src && !src.startsWith('data:image')) {
-            try {
-              const cleanedSrc = src.trim().replace(/^[\r\n\t\s]+|[\r\n\t\s]+$/g, '');
-              const absoluteUrl = new URL(cleanedSrc, targetUrl).toString();
-              if (!excludePatterns.some((rx) => rx.test(absoluteUrl)) && !seen.has(absoluteUrl)) {
-                seen.add(absoluteUrl);
-                rawCandidates.push(absoluteUrl);
-              }
-            } catch (e) {
-              // ignore
-            }
-          }
-        });
-      }
-    } catch (e) {
-      // DOMParser fallback
+  // 1. Extract Markdown image links: ![alt](url)
+  const mdImgRegex = /!\[.*?\]\((https?:\/\/[^\s\)]+)\)/gi;
+  let mdMatch;
+  while ((mdMatch = mdImgRegex.exec(htmlOrMd)) !== null) {
+    const rawUrl = mdMatch[1].trim();
+    if (basicExcludePatterns.some((rx) => rx.test(rawUrl))) continue;
+    if (!seen.has(rawUrl)) {
+      seen.add(rawUrl);
+      rawCandidates.push(rawUrl);
     }
   }
 
-  // Fallback extraction if no reader container was found or if Markdown output from Jina
-  if (!extractedFromReaderContainer || rawCandidates.length === 0) {
-    // 1. Extract Markdown image links: ![alt](url)
-    const mdImgRegex = /!\[.*?\]\((https?:\/\/[^\s\)]+)\)/gi;
-    let mdMatch;
-    while ((mdMatch = mdImgRegex.exec(htmlOrMd)) !== null) {
-      const rawUrl = mdMatch[1].trim();
-      if (excludePatterns.some((rx) => rx.test(rawUrl))) continue;
-      if (!seen.has(rawUrl)) {
-        seen.add(rawUrl);
-        rawCandidates.push(rawUrl);
-      }
+  // 2. Extract HTML <img> tags across the entire page (old style, no container isolation)
+  const imgRegex = /<img\s+[^>]*>/gi;
+  const matches = htmlOrMd.match(imgRegex) || [];
+
+  for (const imgTag of matches) {
+    let src = '';
+    const srcsetMatch = imgTag.match(/(?:data-srcset|srcset)=["']([^"']+)["']/i);
+    if (srcsetMatch) {
+      const parts = srcsetMatch[1].split(',').map((s: string) => s.trim().split(/\s+/)[0]);
+      if (parts.length > 0) src = parts[parts.length - 1].trim();
     }
 
-    // 2. Extract HTML <img> tags
-    const imgRegex = /<img\s+[^>]*>/gi;
-    const matches = htmlOrMd.match(imgRegex) || [];
+    if (!src) {
+      const attrMatch = imgTag.match(
+        /(?:data-src|data-original|data-lazy-src|data-url|data-image|data-cdn|src)=["']([^"']+)["']/i
+      );
+      if (attrMatch) src = attrMatch[1].trim();
+    }
 
-    for (const imgTag of matches) {
-      // Skip images located in headers, footers, sidebars or comment sections in tag text
-      if (
-        /class=["'][^"']*(?:sidebar|comment|recommend|footer|header|widget|nav|ad-)[^"']*["']/i.test(imgTag)
-      ) {
-        continue;
+    if (!src || src.startsWith('data:image')) continue;
+
+    try {
+      const cleanedSrc = src.trim().replace(/^[\r\n\t\s]+|[\r\n\t\s]+$/g, '');
+      const absoluteUrl = new URL(cleanedSrc, targetUrl).toString();
+      if (basicExcludePatterns.some((rx) => rx.test(absoluteUrl))) continue;
+      if (!seen.has(absoluteUrl)) {
+        seen.add(absoluteUrl);
+        rawCandidates.push(absoluteUrl);
       }
-
-      let src = '';
-      const srcsetMatch = imgTag.match(/(?:data-srcset|srcset)=["']([^"']+)["']/i);
-      if (srcsetMatch) {
-        const parts = srcsetMatch[1].split(',').map((s: string) => s.trim().split(/\s+/)[0]);
-        if (parts.length > 0) src = parts[parts.length - 1].trim();
-      }
-
-      if (!src) {
-        const attrMatch = imgTag.match(
-          /(?:data-src|data-original|data-lazy-src|data-url|data-image|data-cdn|src)=["']([^"']+)["']/i
-        );
-        if (attrMatch) src = attrMatch[1].trim();
-      }
-
-      if (!src || src.startsWith('data:image')) continue;
-
-      try {
-        const cleanedSrc = src.trim().replace(/^[\r\n\t\s]+|[\r\n\t\s]+$/g, '');
-        const absoluteUrl = new URL(cleanedSrc, targetUrl).toString();
-        if (excludePatterns.some((rx) => rx.test(absoluteUrl))) continue;
-        if (!seen.has(absoluteUrl)) {
-          seen.add(absoluteUrl);
-          rawCandidates.push(absoluteUrl);
-        }
-      } catch (e) {
-        // ignore malformed URLs
-      }
+    } catch (e) {
+      // ignore malformed URLs
     }
   }
 
@@ -342,16 +193,9 @@ export async function extractComicImagesClient(url: string): Promise<{ title: st
     throw new Error('NO_IMAGES_FOUND: Không phát hiện được trang ảnh nào từ URL này.');
   }
 
-  // Filter rawCandidates using Natural Image Dimension Verification (removes icons, ads, thumbnails)
-  const filteredImages = await filterRealMangaImages(rawCandidates);
-
-  if (filteredImages.length === 0) {
-    throw new Error('NO_IMAGES_FOUND: Không tìm thấy trang truyện hợp lệ (các hình ảnh trên trang đều quá nhỏ hoặc là quảng cáo).');
-  }
-
   return {
     title,
-    images: filteredImages.slice(0, 50),
+    images: rawCandidates.slice(0, 50),
   };
 }
 
