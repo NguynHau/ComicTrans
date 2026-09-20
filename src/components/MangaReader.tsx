@@ -74,42 +74,49 @@ export const MangaReader: React.FC<MangaReaderProps> = ({
 
   return (
     <div className="w-full max-w-2xl mx-auto flex flex-col space-y-3">
-      {/* View Mode & Archive Toggle Container (Từng ảnh / Cuộn / Lưu trữ) */}
-      <div className="flex items-center justify-between bg-[#141417] border border-zinc-800 rounded-xl p-1 gap-1">
-        <button
-          onClick={() => setViewMode('single')}
-          className={`flex-1 py-2 px-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1 ${
-            viewMode === 'single'
-              ? 'bg-[#e06b3a] text-white shadow-md shadow-orange-950/40'
-              : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60'
-          }`}
-        >
-          <Maximize2 className="w-3.5 h-3.5 flex-shrink-0" />
-          <span>Từng ảnh</span>
-        </button>
-        <button
-          onClick={() => setViewMode('scroll')}
-          className={`flex-1 py-2 px-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1 ${
-            viewMode === 'scroll'
-              ? 'bg-[#e06b3a] text-white shadow-md shadow-orange-950/40'
-              : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60'
-          }`}
-        >
-          <Scroll className="w-3.5 h-3.5 flex-shrink-0" />
-          <span>Cuộn</span>
-        </button>
-        <button
-          onClick={handleSaveArchive}
-          className={`flex-1 py-2 px-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1 ${
-            savedSuccess
-              ? 'bg-emerald-600 text-white'
-              : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700/80'
-          }`}
-          title="Lưu bản dịch vào máy và hiển thị ở tab Truyện"
-        >
-          <BookmarkCheck className="w-3.5 h-3.5 flex-shrink-0 text-orange-400" />
-          <span>{savedSuccess ? 'Đã lưu!' : 'Lưu trữ'}</span>
-        </button>
+      {/* Separate Containers for View Modes vs Save Archive Button */}
+      <div className="flex items-center gap-2 w-full">
+        {/* Container 1: Từng ảnh / Cuộn */}
+        <div className="flex-1 flex items-center bg-[#141417] border border-zinc-800 rounded-xl p-1 gap-1">
+          <button
+            onClick={() => setViewMode('single')}
+            className={`flex-1 py-2 px-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1 ${
+              viewMode === 'single'
+                ? 'bg-[#e06b3a] text-white shadow-md shadow-orange-950/40'
+                : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60'
+            }`}
+          >
+            <Maximize2 className="w-3.5 h-3.5 flex-shrink-0" />
+            <span>Từng ảnh</span>
+          </button>
+          <button
+            onClick={() => setViewMode('scroll')}
+            className={`flex-1 py-2 px-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1 ${
+              viewMode === 'scroll'
+                ? 'bg-[#e06b3a] text-white shadow-md shadow-orange-950/40'
+                : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60'
+            }`}
+          >
+            <Scroll className="w-3.5 h-3.5 flex-shrink-0" />
+            <span>Cuộn</span>
+          </button>
+        </div>
+
+        {/* Container 2: Lưu trữ button */}
+        <div className="flex-shrink-0">
+          <button
+            onClick={handleSaveArchive}
+            className={`py-2.5 px-4 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-md ${
+              savedSuccess
+                ? 'bg-emerald-600 text-white'
+                : 'bg-[#141417] hover:bg-zinc-800 text-zinc-200 border border-zinc-700/80'
+            }`}
+            title="Lưu bản dịch vào máy và hiển thị ở tab Truyện"
+          >
+            <BookmarkCheck className="w-4 h-4 text-orange-400 flex-shrink-0" />
+            <span>{savedSuccess ? 'Đã lưu!' : 'Lưu trữ'}</span>
+          </button>
+        </div>
       </div>
 
       {/* Reader Main Container */}
@@ -186,18 +193,25 @@ export const MangaReader: React.FC<MangaReaderProps> = ({
             </button>
           </div>
         ) : (
-          /* WEBTOON SCROLL VIEW MODE */
+          /* WEBTOON SCROLL VIEW MODE (Only show completed/translated pages) */
           <div className="w-full flex flex-col bg-black">
-            {pages.map((p, idx) => (
-              <div key={p.id || idx} className="relative w-full flex justify-center border-b border-zinc-900 last:border-b-0">
-                <img
-                  src={p.processed_image || p.source_image}
-                  alt={`Trang ${p.page_number}`}
-                  className="w-full h-auto object-contain select-none"
-                  referrerPolicy="no-referrer"
-                />
+            {pages
+              .filter((p) => p.status === 'completed' || p.processed_image)
+              .map((p, idx) => (
+                <div key={p.id || idx} className="relative w-full flex justify-center border-b border-zinc-900 last:border-b-0">
+                  <img
+                    src={p.processed_image || p.source_image}
+                    alt={`Trang ${p.page_number}`}
+                    className="w-full h-auto object-contain select-none"
+                    referrerPolicy="no-referrer"
+                  />
+                </div>
+              ))}
+            {pages.filter((p) => p.status === 'completed' || p.processed_image).length === 0 && (
+              <div className="py-16 text-center text-zinc-500 text-xs">
+                Đang dịch các trang truyện... Các trang đã dịch xong sẽ xuất hiện lần lượt tại đây.
               </div>
-            ))}
+            )}
           </div>
         )}
 
