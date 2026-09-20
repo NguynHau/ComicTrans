@@ -560,20 +560,8 @@ export function App() {
                     pages={pages}
                     onRetryPage={handleRetryPage}
                     onUpdateDialogue={handleUpdateDialogue}
+                    onReset={handleReset}
                   />
-                )}
-
-                {/* Back / New Translation Button */}
-                {(activeJob.status === 'completed' || activeJob.status === 'failed' || activeJob.status === 'cancelled') && (
-                  <div className="flex justify-center pt-2">
-                    <button
-                      onClick={handleReset}
-                      className="flex items-center gap-2 text-xs font-semibold px-4 py-2.5 bg-[#141417] hover:bg-[#1f1f25] text-zinc-200 rounded-xl border border-zinc-800 transition-colors shadow-lg shadow-black/40"
-                    >
-                      <RefreshCw className="w-3.5 h-3.5 text-[#e06b3a]" />
-                      <span>Dịch chương truyện khác</span>
-                    </button>
-                  </div>
                 )}
               </div>
             )}

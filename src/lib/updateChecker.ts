@@ -6,8 +6,8 @@ export interface VersionInfo {
 
 // Current bundled build version info
 export const CURRENT_VERSION: VersionInfo = {
-  version: '1.0.3',
-  buildTime: 1758358200000,
+  version: '1.0.4',
+  buildTime: 1758362000000,
   description: 'Bản dịch hiện tại'
 };
 

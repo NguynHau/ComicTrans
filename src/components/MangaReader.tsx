@@ -8,6 +8,7 @@ import {
   Maximize2,
   Scroll,
   BookmarkCheck,
+  RefreshCw,
 } from 'lucide-react';
 import { MangaJob, MangaPage } from '../types';
 import { SaveFolderModal } from './SaveFolderModal';
@@ -17,12 +18,14 @@ interface MangaReaderProps {
   pages: MangaPage[];
   onRetryPage: (pageId: string) => void;
   onUpdateDialogue?: (pageId: string, dialogueIndex: number, newText: string, updatedPage?: MangaPage) => void;
+  onReset?: () => void;
 }
 
 export const MangaReader: React.FC<MangaReaderProps> = ({
   job,
   pages,
   onRetryPage,
+  onReset,
 }) => {
   const [currentPageIdx, setCurrentPageIdx] = useState(0);
   const [viewMode, setViewMode] = useState<'single' | 'scroll'>('single');
@@ -53,12 +56,44 @@ export const MangaReader: React.FC<MangaReaderProps> = ({
     setTimeout(() => setSavedSuccess(false), 2000);
   };
 
+  const isReadyToSave = pages.length > 0;
+
   return (
     <div className="w-full max-w-2xl mx-auto flex flex-col space-y-3">
-      {/* Separate Containers for View Modes vs Save Archive Button */}
-      <div className="flex items-center gap-2 w-full">
-        {/* Container 1: Từng ảnh / Cuộn */}
-        <div className="flex-1 flex items-center bg-[#141417] border border-zinc-800 rounded-xl p-1 gap-1">
+      {/* Controls Area */}
+      <div className="flex flex-col gap-2 w-full">
+        {/* Row 1: Lưu trữ button & Dịch chương mới button */}
+        <div className="flex items-center gap-2 w-full">
+          <button
+            onClick={handleSaveArchive}
+            disabled={!isReadyToSave}
+            className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-md ${
+              !isReadyToSave
+                ? 'opacity-40 cursor-not-allowed bg-zinc-900 text-zinc-500 border border-zinc-800'
+                : savedSuccess
+                ? 'bg-emerald-600 text-white'
+                : 'bg-[#141417] hover:bg-zinc-800 text-zinc-200 border border-zinc-700/80'
+            }`}
+            title="Lưu bản dịch vào máy và hiển thị ở tab Truyện"
+          >
+            <BookmarkCheck className={`w-4 h-4 flex-shrink-0 ${isReadyToSave ? 'text-orange-400' : 'text-zinc-600'}`} />
+            <span>{savedSuccess ? 'Đã lưu!' : 'Lưu trữ'}</span>
+          </button>
+
+          {onReset && (
+            <button
+              onClick={onReset}
+              className="flex-1 py-2.5 px-4 rounded-xl text-xs font-bold bg-[#141417] hover:bg-zinc-800 text-zinc-200 border border-zinc-700/80 transition-all flex items-center justify-center gap-1.5 shadow-md"
+              title="Dịch chương truyện mới"
+            >
+              <RefreshCw className="w-3.5 h-3.5 text-[#e06b3a]" />
+              <span>Dịch chương mới</span>
+            </button>
+          )}
+        </div>
+
+        {/* Row 2: View modes (Từng ảnh / Cuộn) */}
+        <div className="flex items-center bg-[#141417] border border-zinc-800 rounded-xl p-1 gap-1 w-full">
           <button
             onClick={() => setViewMode('single')}
             className={`flex-1 py-2 px-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1 ${
@@ -81,30 +116,6 @@ export const MangaReader: React.FC<MangaReaderProps> = ({
             <Scroll className="w-3.5 h-3.5 flex-shrink-0" />
             <span>Cuộn</span>
           </button>
-        </div>
-
-        {/* Container 2: Lưu trữ button */}
-        <div className="flex-shrink-0">
-          {(() => {
-            const isReadyToSave = pages.length > 0;
-            return (
-              <button
-                onClick={handleSaveArchive}
-                disabled={!isReadyToSave}
-                className={`py-2.5 px-4 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-md ${
-                  !isReadyToSave
-                    ? 'opacity-40 cursor-not-allowed bg-zinc-900 text-zinc-500 border border-zinc-800'
-                    : savedSuccess
-                    ? 'bg-emerald-600 text-white'
-                    : 'bg-[#141417] hover:bg-zinc-800 text-zinc-200 border border-zinc-700/80'
-                }`}
-                title="Lưu bản dịch vào máy và hiển thị ở tab Truyện"
-              >
-                <BookmarkCheck className={`w-4 h-4 flex-shrink-0 ${isReadyToSave ? 'text-orange-400' : 'text-zinc-600'}`} />
-                <span>{savedSuccess ? 'Đã lưu!' : 'Lưu trữ'}</span>
-              </button>
-            );
-          })()}
         </div>
       </div>
 
