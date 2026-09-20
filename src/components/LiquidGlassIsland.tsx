@@ -45,13 +45,13 @@ export const LiquidGlassIsland: React.FC<LiquidGlassIslandProps> = ({
     damping: 25,
   });
 
-  // Dynamic Clip-Path that scales and moves synchronously with animatedX and pressScaleX
+  // Dynamic Clip-Path that scales and moves synchronously with animatedX and pressScaleX (with 0.75px left correction for absolute alignment)
   const clipPathStyle = useTransform(
     [animatedX, pressScaleX],
     ([x, scaleX]) => {
       const currentWidth = 71 * (scaleX as number);
       const offset = (currentWidth - 71) / 2;
-      const newX = (x as number) - offset;
+      const newX = (x as number) - offset - 0.75;
       return `inset(5px calc(100% - (${newX}px + ${currentWidth}px)) 5px ${newX}px round 9999px)`;
     }
   );
@@ -60,23 +60,21 @@ export const LiquidGlassIsland: React.FC<LiquidGlassIslandProps> = ({
   const pointerStartRef = useRef(0);
   const xStartRef = useRef(0);
 
-  // Helper to calculate dynamic bounds based on current container width and padding (px-1.5 = 6px)
+  // Helper to calculate dynamic bounds based on current container width
   const getBounds = () => {
-    if (!containerRef.current) return { min: 0, max: 280, itemWidth: 70, paddingLeft: 6 };
+    if (!containerRef.current) return { min: 0, max: 280, itemWidth: 70 };
     const containerWidth = containerRef.current.offsetWidth || 350;
-    const paddingLeft = 6; // px-1.5 = 6px
-    const innerWidth = containerWidth - (paddingLeft * 2);
-    const itemWidth = innerWidth / TABS.length;
-    const min = paddingLeft + itemWidth / 2 - 35.5;
-    const max = paddingLeft + (TABS.length - 1) * itemWidth + itemWidth / 2 - 35.5;
-    return { min, max, itemWidth, paddingLeft };
+    const itemWidth = containerWidth / TABS.length;
+    const min = itemWidth / 2 - 35.5;
+    const max = (TABS.length - 1) * itemWidth + itemWidth / 2 - 35.5;
+    return { min, max, itemWidth };
   };
 
   // Calculate and update position based on active tab index
   const updatePosition = (idx: number) => {
     if (isDragging.current) return; // Do not interrupt during manual drag
-    const { paddingLeft, itemWidth } = getBounds();
-    const targetX = paddingLeft + idx * itemWidth + itemWidth / 2 - 35.5;
+    const { min, itemWidth } = getBounds();
+    const targetX = idx * itemWidth + itemWidth / 2 - 35.5;
     blobTargetX.set(targetX);
   };
 
@@ -112,31 +110,24 @@ export const LiquidGlassIsland: React.FC<LiquidGlassIslandProps> = ({
     const rect = containerRef.current.getBoundingClientRect();
     const paddingLeft = 6; // px-1.5 = 6px
     const localX = e.clientX - rect.left - paddingLeft;
-    const innerWidth = rect.width - (paddingLeft * 2);
-    const itemWidth = innerWidth / TABS.length;
+    const targetX = localX - 35.5; // 35.5 is half of droplet width (71)
 
-    const clickedIdx = Math.max(0, Math.min(TABS.length - 1, Math.floor(localX / itemWidth)));
-    onChangeTab(TABS[clickedIdx].id);
-
-    const targetX = paddingLeft + clickedIdx * itemWidth + itemWidth / 2 - 35.5;
+    const { min, max } = getBounds();
+    let constrainedX = Math.max(min, Math.min(max, targetX));
 
     isDragging.current = true;
     pointerStartRef.current = e.clientX;
-    xStartRef.current = targetX;
+    xStartRef.current = constrainedX;
 
-    blobTargetX.set(targetX);
-    animatedX.set(targetX);
+    blobTargetX.set(constrainedX);
+    animatedX.set(constrainedX);
 
     // SWELL scales when grabbed
     pressTargetScaleX.set(1.35);
     pressTargetScaleY.set(1.4);
 
     if (e.currentTarget) {
-      try {
-        e.currentTarget.setPointerCapture(e.pointerId);
-      } catch (err) {
-        // ignore if capture lost
-      }
+      e.currentTarget.setPointerCapture(e.pointerId);
     }
   };
 
