@@ -273,8 +273,8 @@ export const MangaReader: React.FC<MangaReaderProps> = ({
 
         {/* Font Size & Original Switch */}
         <div className="flex items-center gap-2">
-          <div className="hidden sm:flex items-center gap-1 bg-slate-800 px-2 py-1 rounded-lg text-slate-300 text-xs">
-            <Type className="w-3.5 h-3.5 text-indigo-400" />
+          <div className="hidden sm:flex items-center gap-1 bg-zinc-800 px-2 py-1 rounded-lg text-zinc-300 text-xs">
+            <Type className="w-3.5 h-3.5 text-[#e06b3a]" />
             <button
               onClick={() => setFontSizeOffset((v) => Math.max(-2, v - 1))}
               className="px-1.5 hover:text-white font-bold"
@@ -282,7 +282,7 @@ export const MangaReader: React.FC<MangaReaderProps> = ({
             >
               A-
             </button>
-            <span className="text-[10px] text-slate-500">|</span>
+            <span className="text-[10px] text-zinc-500">|</span>
             <button
               onClick={() => setFontSizeOffset((v) => Math.min(4, v + 1))}
               className="px-1.5 hover:text-white font-bold"
@@ -301,17 +301,17 @@ export const MangaReader: React.FC<MangaReaderProps> = ({
             }`}
           >
             {showOriginal ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-            <span>{showOriginal ? 'Bản gốc (Gốc)' : 'Đã dịch (Translated)'}</span>
+            <span>{showOriginal ? 'Xem bản gốc' : 'Xem bản dịch'}</span>
           </button>
 
           {/* Download Zip */}
           <button
             onClick={handleDownloadZip}
             disabled={isZipping || pages.length === 0}
-            className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg border border-slate-700 transition-colors disabled:opacity-50"
+            className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-lg border border-zinc-700 transition-colors disabled:opacity-50"
             title="Tải toàn bộ chapter dạng file ZIP"
           >
-            <Archive className="w-3.5 h-3.5 text-indigo-400" />
+            <Archive className="w-3.5 h-3.5 text-[#e06b3a]" />
             <span className="hidden sm:inline">{isZipping ? 'Đang nén...' : 'Tải ZIP'}</span>
           </button>
         </div>
@@ -320,9 +320,9 @@ export const MangaReader: React.FC<MangaReaderProps> = ({
       {/* Reader Body */}
       {readerMode === 'single' ? (
         /* Single Page Viewer */
-        <div className="relative bg-slate-950 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl flex flex-col items-center">
+        <div className="relative bg-[#0d0d0f] border border-zinc-800 rounded-2xl overflow-hidden shadow-2xl flex flex-col items-center">
           {/* Main Image Container */}
-          <div className="relative w-full min-h-[450px] sm:min-h-[600px] flex items-center justify-center bg-slate-900">
+          <div className="relative w-full min-h-[450px] sm:min-h-[580px] flex items-center justify-center bg-black">
             {currentPage ? (
               <div className="relative w-full flex justify-center">
                 <img

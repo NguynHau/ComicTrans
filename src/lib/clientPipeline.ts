@@ -1,7 +1,7 @@
 // Client-Side Manga Translation Pipeline
 // This module contains the complete logic for OCR, Translation, Inpainting, and Typesetting running entirely in the browser.
 
-import { MangaPage, OCRBoxItem, TranslationItem, SampleChapter } from '../types';
+import { MangaPage, OCRBoxItem, TranslationItem } from '../types';
 
 // Helper to wrap text based on character width limits
 export function wrapText(text: string, maxCharsPerLine: number): string[] {
@@ -60,159 +60,8 @@ export function layoutDialogueText(
   return { fontSize, lines, lineHeight, totalH };
 }
 
-// Crisp Built-in SVG Manga Samples so that users can click and try the app instantly
-export function generateComicSvgDataUri(theme: 'manga' | 'manhwa' | 'manhua', pageNum: number): string {
-  let svgContent = '';
-
-  if (theme === 'manga') {
-    svgContent = `
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1100" width="800" height="1100" style="background:#0f1117; font-family:'Segoe UI', sans-serif;">
-      <rect x="20" y="20" width="760" height="1060" fill="#f8fafc" stroke="#1e293b" stroke-width="4" rx="8" />
-      <rect x="40" y="40" width="720" height="420" fill="#0f172a" stroke="#000" stroke-width="3" />
-      <path d="M40,40 L400,250 M760,40 L400,250 M40,460 L400,250 M760,460 L400,250 M120,40 L400,250 M680,40 L400,250 M200,460 L400,250 M600,460 L400,250" stroke="#334155" stroke-width="1.5" stroke-dasharray="8,4" />
-      <circle cx="400" cy="230" r="60" fill="#1e293b" stroke="#e2e8f0" stroke-width="2" />
-      <path d="M360,290 Q400,250 440,290 L460,420 L340,420 Z" fill="#1e293b" />
-      <path d="M400,180 L490,130 L450,210 Z" fill="#3b82f6" opacity="0.8" />
-      <text x="400" y="400" fill="#94a3b8" font-size="14" font-weight="bold" text-anchor="middle" letter-spacing="4">SHONEN MANGA - SCENE ${pageNum}</text>
-
-      <path d="M70,80 Q70,60 160,60 Q250,60 250,110 Q250,150 190,150 L170,175 L160,150 Q70,150 70,110 Z" fill="#ffffff" stroke="#0f172a" stroke-width="3.5" />
-      <text x="160" y="98" fill="#0f172a" font-size="15" font-weight="900" text-anchor="middle">何だ…この気配は？！</text>
-      <text x="160" y="122" fill="#475569" font-size="11" font-weight="bold" text-anchor="middle">(Nanda... kono kehai wa?!)</text>
-
-      <path d="M520,100 Q520,80 630,80 Q730,80 730,135 Q730,180 660,180 L640,210 L630,180 Q520,180 520,135 Z" fill="#ffffff" stroke="#0f172a" stroke-width="3.5" />
-      <text x="625" y="122" fill="#dc2626" font-size="16" font-weight="900" text-anchor="middle">全員、結界を展開しろ！</text>
-      <text x="625" y="146" fill="#0f172a" font-size="13" font-weight="bold" text-anchor="middle">急げ、間に合わんぞ！</text>
-
-      <rect x="40" y="480" width="345" height="300" fill="#f1f5f9" stroke="#000" stroke-width="3" />
-      <rect x="415" y="480" width="345" height="300" fill="#e2e8f0" stroke="#000" stroke-width="3" />
-
-      <circle cx="210" cy="620" r="50" fill="#64748b" />
-      <path d="M70,520 Q70,500 170,500 Q270,500 270,560 Q270,610 200,610 L190,635 L175,610 Q70,610 70,560 Z" fill="#ffffff" stroke="#0f172a" stroke-width="3" />
-      <text x="170" y="542" fill="#0f172a" font-size="14" font-weight="900" text-anchor="middle">信じられない強さだ…</text>
-      <text x="170" y="566" fill="#0f172a" font-size="13" font-weight="bold" text-anchor="middle">我々の攻撃が通じない！</text>
-
-      <path d="M460,510 Q460,490 580,490 Q700,490 700,550 Q700,600 620,600 L610,630 L595,600 Q460,600 460,550 Z" fill="#ffffff" stroke="#0f172a" stroke-width="3" />
-      <text x="580" y="535" fill="#2563eb" font-size="15" font-weight="900" text-anchor="middle">オレに任せてくれ！</text>
-      <text x="580" y="560" fill="#0f172a" font-size="13" font-weight="bold" text-anchor="middle">奥義を解放する！！</text>
-
-      <rect x="40" y="800" width="720" height="260" fill="#020617" stroke="#000" stroke-width="3" />
-      <path d="M120,830 Q120,810 280,810 Q430,810 430,875 Q430,930 320,930 L300,960 L285,930 Q120,930 120,875 Z" fill="#ffffff" stroke="#0f172a" stroke-width="4" />
-      <text x="275" y="855" fill="#dc2626" font-size="18" font-weight="900" text-anchor="middle">これで終わりだァァァッ！</text>
-      <text x="275" y="885" fill="#0f172a" font-size="13" font-weight="bold" text-anchor="middle">『覇王連撃・滅竜斬』！！</text>
-      <text x="400" y="1045" fill="#64748b" font-size="11" text-anchor="middle">Page ${pageNum} • Raw Japanese Manga Sample</text>
-    </svg>`;
-  } else if (theme === 'manhwa') {
-    svgContent = `
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 3200" width="800" height="3200" style="background:#090d16; font-family:'Segoe UI', sans-serif;">
-      <rect x="0" y="0" width="800" height="3200" fill="#090d16" />
-      
-      <!-- Panel 1: Top -->
-      <rect x="30" y="40" width="740" height="460" fill="#111827" stroke="#312e81" stroke-width="3" rx="8" />
-      <ellipse cx="400" cy="200" rx="300" ry="120" fill="#1e1b4b" stroke="#6366f1" stroke-width="3" />
-      <text x="400" y="205" fill="#e0e7ff" font-size="16" font-weight="bold" text-anchor="middle" letter-spacing="2">RED GATE DUNGEON • EPISODE ${pageNum}</text>
-      
-      <path d="M70,80 Q70,60 220,60 Q360,60 360,130 Q360,180 250,180 L220,210 L205,180 Q70,180 70,130 Z" fill="#ffffff" stroke="#1e1b4b" stroke-width="4" />
-      <text x="215" y="112" fill="#0f172a" font-size="18" font-weight="900" text-anchor="middle">S급 마수가 왜 여기에…?!</text>
-      <text x="215" y="142" fill="#4338ca" font-size="13" font-weight="bold" text-anchor="middle">(S-geup masu-ga wae yeogie...?)</text>
-
-      <!-- Panel 2: Upper-mid -->
-      <rect x="30" y="550" width="740" height="480" fill="#030712" stroke="#4338ca" stroke-width="3" rx="8" />
-      <path d="M430,610 Q430,580 590,580 Q730,580 730,650 Q730,710 620,710 L600,745 L580,710 Q430,710 430,650 Z" fill="#ffffff" stroke="#1e1b4b" stroke-width="4" />
-      <text x="580" y="638" fill="#dc2626" font-size="18" font-weight="900" text-anchor="middle">헌터 협회에 지원을 요청해!</text>
-      <text x="580" y="668" fill="#0f172a" font-size="14" font-weight="bold" text-anchor="middle">이 녀석은 우리가 감당 못 해!</text>
-
-      <!-- Panel 3: Mid -->
-      <rect x="30" y="1090" width="740" height="480" fill="#0f172a" stroke="#1e293b" stroke-width="3" rx="8" />
-      <circle cx="400" cy="1330" r="140" fill="#1e1b4b" stroke="#38bdf8" stroke-width="3" />
-      <path d="M80,1160 Q80,1130 240,1130 Q380,1130 380,1200 Q380,1260 270,1260 L240,1295 L225,1260 Q80,1260 80,1200 Z" fill="#ffffff" stroke="#0f172a" stroke-width="4" />
-      <text x="230" y="1192" fill="#0f172a" font-size="18" font-weight="900" text-anchor="middle">공격이 전혀 통하지 않아…!</text>
-      <text x="230" y="1222" fill="#0f172a" font-size="14" font-weight="bold" text-anchor="middle">방어막마저 깨져가고 있어!</text>
-
-      <!-- Panel 4: Lower-mid -->
-      <rect x="30" y="1630" width="740" height="480" fill="#090d16" stroke="#6366f1" stroke-width="3" rx="8" />
-      <path d="M420,1700 Q420,1670 590,1670 Q730,1670 730,1740 Q730,1800 620,1800 L600,1835 L580,1800 Q420,1800 420,1740 Z" fill="#ffffff" stroke="#1e1b4b" stroke-width="4" />
-      <text x="575" y="1730" fill="#2563eb" font-size="18" font-weight="900" text-anchor="middle">모두 뒤로 물러서라.</text>
-      <text x="575" y="1760" fill="#0f172a" font-size="14" font-weight="bold" text-anchor="middle">지금부터 내가 직접 나선다.</text>
-
-      <!-- Panel 5: Deep -->
-      <rect x="30" y="2170" width="740" height="480" fill="#020617" stroke="#4f46e5" stroke-width="4" rx="8" />
-      <path d="M90,2240 Q90,2210 290,2210 Q460,2210 460,2280 Q460,2340 330,2340 L300,2380 L280,2340 Q90,2340 90,2280 Z" fill="#ffffff" stroke="#1e1b4b" stroke-width="4.5" />
-      <text x="275" y="2272" fill="#dc2626" font-size="20" font-weight="900" text-anchor="middle">일어나라… 그림자 군단!!</text>
-      <text x="275" y="2302" fill="#0f172a" font-size="14" font-weight="bold" text-anchor="middle">적들을 모조리 짓밟아라!</text>
-
-      <!-- Panel 6: Climax -->
-      <rect x="30" y="2710" width="740" height="420" fill="#090d16" stroke="#22c55e" stroke-width="3" rx="8" />
-      <path d="M410,2770 Q410,2740 590,2740 Q740,2740 740,2810 Q740,2870 620,2870 L600,2905 L580,2870 Q410,2870 410,2810 Z" fill="#ffffff" stroke="#1e1b4b" stroke-width="4" />
-      <text x="575" y="2800" fill="#16a34a" font-size="19" font-weight="900" text-anchor="middle">군주님의 명을 받듭니다!</text>
-      <text x="575" y="2830" fill="#0f172a" font-size="14" font-weight="bold" text-anchor="middle">전원 진격하라—!!</text>
-
-      <text x="400" y="3170" fill="#64748b" font-size="12" text-anchor="middle">Long Webtoon Strip • 3200px Height • 6 Speech Bubbles</text>
-    </svg>`;
-  } else {
-    svgContent = `
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1100" width="800" height="1100" style="background:#18181b; font-family:'Segoe UI', sans-serif;">
-      <rect x="20" y="20" width="760" height="1060" fill="#27272a" stroke="#eab308" stroke-width="3" rx="8" />
-      <rect x="40" y="40" width="720" height="420" fill="#18181b" stroke="#eab308" stroke-width="2" />
-      <circle cx="400" cy="220" r="90" fill="#3f3f46" stroke="#f59e0b" stroke-width="3" />
-      <path d="M400,80 L420,360 L380,360 Z" fill="#fbbf24" stroke="#d97706" stroke-width="2" />
-      <text x="400" y="410" fill="#fef08a" font-size="14" font-weight="bold" text-anchor="middle" letter-spacing="4">万剑宗 • 演武场</text>
-
-      <path d="M70,80 Q70,60 210,60 Q340,60 340,120 Q340,170 230,170 L210,200 L195,170 Q70,170 70,120 Z" fill="#ffffff" stroke="#78350f" stroke-width="3.5" />
-      <text x="205" y="102" fill="#78350f" font-size="17" font-weight="900" text-anchor="middle">大胆狂徒！</text>
-      <text x="205" y="128" fill="#1c1917" font-size="13" font-weight="bold" text-anchor="middle">也敢在此偷学宗门秘法？！</text>
-
-      <path d="M470,90 Q470,70 600,70 Q730,70 730,130 Q730,180 630,180 L610,210 L595,180 Q470,180 470,130 Z" fill="#ffffff" stroke="#78350f" stroke-width="3.5" />
-      <text x="600" y="112" fill="#dc2626" font-size="16" font-weight="900" text-anchor="middle">区区外门弟子…</text>
-      <text x="600" y="138" fill="#1c1917" font-size="13" font-weight="bold" text-anchor="middle">今日便废了你的修为！</text>
-
-      <rect x="40" y="480" width="345" height="300" fill="#2d2d30" stroke="#a1a1aa" stroke-width="2" />
-      <rect x="415" y="480" width="345" height="300" fill="#2d2d30" stroke="#a1a1aa" stroke-width="2" />
-
-      <path d="M100,520 Q100,490 270,490 Q420,490 420,560 Q420,620 300,620 L270,655 L250,620 Q100,620 100,560 Z" fill="#ffffff" stroke="#78350f" stroke-width="3.5" />
-      <text x="260" y="538" fill="#1c1917" font-size="15" font-weight="900" text-anchor="middle">这股剑意…怎么会如此强悍？！</text>
-      <text x="260" y="564" fill="#047857" font-size="13" font-weight="bold" text-anchor="middle">难道 he 已经参透了第九重？！</text>
-
-      <rect x="40" y="800" width="720" height="260" fill="#1c1917" stroke="#eab308" stroke-width="3.5" />
-      <path d="M430,830 Q430,800 600,800 Q740,800 740,870 Q740,930 630,930 L610,965 L590,930 Q430,930 430,870 Z" fill="#ffffff" stroke="#78350f" stroke-width="4" />
-      <text x="585" y="855" fill="#dc2626" font-size="18" font-weight="900" text-anchor="middle">九天玄雷，破！</text>
-      <text x="585" y="885" fill="#1c1917" font-size="13" font-weight="bold" text-anchor="middle">叫尔等见识真正的天地之力！</text>
-      <text x="400" y="1050" fill="#a1a1aa" font-size="11" text-anchor="middle">Chapter ${pageNum} • Raw Chinese Manhua Sample</text>
-    </svg>`;
-  }
-
-  return `data:image/svg+xml;utf8,${encodeURIComponent(svgContent.trim())}`;
-}
-
-const SAMPLE_CHAPTERS: Record<string, { title: string; images: string[] }> = {
-  'sample://manga/chapter-1': {
-    title: 'One Piece / Shonen Manga - Chap 1 (Manga Tiếng Nhật)',
-    images: [
-      generateComicSvgDataUri('manga', 1),
-      generateComicSvgDataUri('manga', 2),
-    ],
-  },
-  'sample://manhwa/action': {
-    title: 'Solo Leveling / Hunter - Ep 12 (Webtoon Tiếng Hàn)',
-    images: [
-      generateComicSvgDataUri('manhwa', 1),
-      generateComicSvgDataUri('manhwa', 2),
-    ],
-  },
-  'sample://manhua/cultivation': {
-    title: 'Đấu Phá Thương Khung - Chap 88 (Manhua Tiếng Trung)',
-    images: [
-      generateComicSvgDataUri('manhua', 1),
-      generateComicSvgDataUri('manhua', 2),
-    ],
-  },
-};
-
 // Scraping function using client-side fallback with AllOrigins CORS proxy
 export async function extractComicImagesClient(url: string): Promise<{ title: string; images: string[] }> {
-  if (SAMPLE_CHAPTERS[url]) {
-    return SAMPLE_CHAPTERS[url];
-  }
-
   try {
     let targetUrl = url.trim();
     if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) {

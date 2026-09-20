@@ -1,14 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Navbar } from './components/Navbar';
 import { OfflineIndicator } from './components/OfflineIndicator';
+import { OrientationLock } from './components/OrientationLock';
 import { UrlInputCard } from './components/UrlInputCard';
 import { JobProgressCard } from './components/JobProgressCard';
 import { MangaReader } from './components/MangaReader';
-import { SampleChaptersModal } from './components/SampleChaptersModal';
 import { ApiDocsModal } from './components/ApiDocsModal';
 import { SettingsModal } from './components/SettingsModal';
-import { MangaJob, MangaPage, SampleChapter } from './types';
-import { BookOpen, Sparkles, ShieldCheck, Zap, Layers, RefreshCw } from 'lucide-react';
+import { MangaJob, MangaPage, RecentItem } from './types';
+import { RefreshCw } from 'lucide-react';
 import {
   extractComicImagesClient,
   runOcrAndTranslationClient,
@@ -20,7 +20,6 @@ export function App() {
   const [pages, setPages] = useState<MangaPage[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [isSampleModalOpen, setIsSampleModalOpen] = useState<boolean>(false);
   const [isApiDocsModalOpen, setIsApiDocsModalOpen] = useState<boolean>(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState<boolean>(false);
 
@@ -172,7 +171,36 @@ export function App() {
         }
       }
 
-      // 5. Finalize Job Status
+      // 5. Finalize Job Status & Save to Recents
+      if (completedCount > 0) {
+        try {
+          const recentItem: RecentItem = {
+            id: job_id,
+            title: url
+              ? (url.split('/').filter(Boolean).pop()?.replace(/[-_]/g, ' ') || 'Chương truyện')
+              : 'Tệp tải lên cá nhân',
+            sourceUrl: url,
+            thumbnail: resolvedImages[0],
+            totalPages: resolvedImages.length,
+            completedPages: completedCount,
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            job: {
+              ...initialJob,
+              status: 'completed',
+              completed_pages: completedCount,
+              total_pages: resolvedImages.length,
+            },
+            pages: initialPages,
+          };
+          const stored = localStorage.getItem('COMIC_TRANS_RECENTS');
+          const list: RecentItem[] = stored ? JSON.parse(stored) : [];
+          const updatedList = [recentItem, ...list.filter(x => x.id !== job_id)].slice(0, 10);
+          localStorage.setItem('COMIC_TRANS_RECENTS', JSON.stringify(updatedList));
+        } catch (e) {
+          console.warn('Could not save recent item:', e);
+        }
+      }
+
       setActiveJob(prev => {
         if (!prev || prev.job_id !== job_id) return prev;
         if (prev.status === 'cancelled') return prev;
@@ -198,6 +226,11 @@ export function App() {
 
   const handleCancelJob = async () => {
     setActiveJob((prev) => (prev ? { ...prev, status: 'cancelled' } : null));
+  };
+
+  const handleResumeRecent = (item: RecentItem) => {
+    setActiveJob(item.job);
+    setPages(item.pages);
   };
 
   const handleRetryPage = async (pageId: string) => {
@@ -274,10 +307,6 @@ export function App() {
     );
   };
 
-  const handleSelectSample = (sample: SampleChapter) => {
-    handleStartTranslation(sample.url, sample.source_language, sample.target_language);
-  };
-
   const handleReset = () => {
     setActiveJob(null);
     setPages([]);
@@ -287,11 +316,13 @@ export function App() {
   const hasReaderView = pages.length > 0;
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-indigo-500 selection:text-white pb-12">
+    <div className="min-h-screen bg-comic-panel text-zinc-100 flex flex-col font-sans selection:bg-[#e06b3a] selection:text-white pb-10">
+      {/* Orientation Lock (Blocks landscape rotation on mobile) */}
+      <OrientationLock />
+
       {/* Top Header */}
       <Navbar
         onOpenApiDocs={() => setIsApiDocsModalOpen(true)}
-        onOpenSamples={() => setIsSampleModalOpen(true)}
         onOpenSettings={() => setIsSettingsModalOpen(true)}
         onReset={handleReset}
         hasActiveJob={!!activeJob}
@@ -300,53 +331,20 @@ export function App() {
       {/* Offline Alert */}
       <OfflineIndicator />
 
-      {/* Main Content Area */}
-      <main className="flex-1 max-w-4xl w-full mx-auto px-4 py-6 flex flex-col items-center space-y-6">
-        {/* Header Hero (if no active job or reader) */}
-        {!activeJob && (
-          <div className="text-center max-w-lg mx-auto pt-4 pb-2 space-y-2 animate-fadeIn">
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 text-xs font-semibold mb-1">
-              <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
-              <span>Dịch Manga / Manhwa / Manhua từ URL</span>
-            </div>
-            <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white">
-              Đọc Truyện Tranh Mọi Ngôn Ngữ
-            </h2>
-            <p className="text-xs sm:text-sm text-slate-400 leading-relaxed">
-              Tự động bóc tách từng trang ảnh, nhận diện khung thoại bằng Vision AI, xóa chữ gốc và chèn bản dịch tự nhiên.
-            </p>
-          </div>
-        )}
-
-        {/* URL Input Form */}
+      {/* Main Content Area: Strictly Mobile max-w-md */}
+      <main className="flex-1 w-full max-w-md mx-auto px-4 py-4 flex flex-col items-center">
+        {/* Landing View: Matches Mockup Exactly */}
         {!activeJob && (
           <UrlInputCard
             onSubmit={handleStartTranslation}
             isLoading={isLoading}
             errorMessage={errorMessage}
-            onOpenSamples={() => setIsSampleModalOpen(true)}
+            onOpenSettings={() => setIsSettingsModalOpen(true)}
+            onResumeRecent={handleResumeRecent}
           />
         )}
 
-        {/* Feature Highlights (when on landing) */}
-        {!activeJob && (
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 w-full max-w-xl pt-2 text-slate-400 text-xs">
-            <div className="bg-slate-900/60 border border-slate-800/80 rounded-xl p-3 flex items-center gap-2.5">
-              <Zap className="w-4 h-4 text-amber-400 flex-shrink-0" />
-              <span>Nhận diện OCR & dịch thuật tự động</span>
-            </div>
-            <div className="bg-slate-900/60 border border-slate-800/80 rounded-xl p-3 flex items-center gap-2.5">
-              <Layers className="w-4 h-4 text-indigo-400 flex-shrink-0" />
-              <span>Tự căn chỉnh font chữ vừa khung thoại</span>
-            </div>
-            <div className="bg-slate-900/60 border border-slate-800/80 rounded-xl p-3 flex items-center gap-2.5">
-              <ShieldCheck className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-              <span>Bảo mật, lưu trữ và chạy 100% trong browser</span>
-            </div>
-          </div>
-        )}
-
-        {/* Active Job Progress View */}
+        {/* Active Job Progress View & Reader */}
         {activeJob && (
           <div className="w-full space-y-4">
             <JobProgressCard
@@ -376,23 +374,16 @@ export function App() {
               <div className="flex justify-center pt-2">
                 <button
                   onClick={handleReset}
-                  className="flex items-center gap-2 text-xs font-semibold px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl border border-slate-700 transition-colors"
+                  className="flex items-center gap-2 text-xs font-semibold px-4 py-2.5 bg-[#141417] hover:bg-[#1f1f25] text-zinc-200 rounded-xl border border-zinc-800 transition-colors shadow-lg shadow-black/40"
                 >
-                  <RefreshCw className="w-3.5 h-3.5" />
-                  <span>Dịch URL chapter khác</span>
+                  <RefreshCw className="w-3.5 h-3.5 text-[#e06b3a]" />
+                  <span>Dịch chương truyện khác</span>
                 </button>
               </div>
             )}
           </div>
         )}
       </main>
-
-      {/* Sample Chapters Modal */}
-      <SampleChaptersModal
-        isOpen={isSampleModalOpen}
-        onClose={() => setIsSampleModalOpen(false)}
-        onSelectSample={handleSelectSample}
-      />
 
       {/* REST API & OpenAPI Modal */}
       <ApiDocsModal

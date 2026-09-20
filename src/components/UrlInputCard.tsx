@@ -1,90 +1,84 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
-  Link2,
-  ArrowRight,
+  Globe,
   Clipboard,
   Sparkles,
   AlertCircle,
-  Globe,
-  Languages,
-  Upload,
+  Camera,
   Image as ImageIcon,
-  Check,
-  X
+  FolderArchive,
+  FileText,
+  Trash2,
+  BookOpen,
+  ArrowRight,
+  X,
+  Languages
 } from 'lucide-react';
-import { LanguageOption, SampleChapter } from '../types';
-
-const SOURCE_LANGUAGES: LanguageOption[] = [
-  { code: 'auto', name: 'Tự nhận diện (Auto Detect)', flag: '🌐' },
-  { code: 'ja', name: 'Tiếng Nhật (Manga)', flag: '🇯🇵' },
-  { code: 'ko', name: 'Tiếng Hàn (Manhwa)', flag: '🇰🇷' },
-  { code: 'zh', name: 'Tiếng Trung (Manhua)', flag: '🇨🇳' },
-  { code: 'en', name: 'Tiếng Anh (Comics)', flag: '🇺🇸' },
-];
-
-const TARGET_LANGUAGES: LanguageOption[] = [
-  { code: 'vi', name: 'Tiếng Việt (Vietnamese)', flag: '🇻🇳' },
-  { code: 'en', name: 'Tiếng Anh (English)', flag: '🇺🇸' },
-  { code: 'fr', name: 'Tiếng Pháp (French)', flag: '🇫🇷' },
-  { code: 'es', name: 'Tiếng Tây Ban Nha (Spanish)', flag: '🇪🇸' },
-  { code: 'th', name: 'Tiếng Thái (Thai)', flag: '🇹🇭' },
-  { code: 'id', name: 'Tiếng Indonesia (Indonesian)', flag: '🇮🇩' },
-];
-
-const QUICK_SAMPLES: { label: string; flag: string; sub: string; url: string; src: string; tgt: string }[] = [
-  {
-    label: 'Manga Shonen (JP)',
-    flag: '🇯🇵',
-    sub: 'Tiếng Nhật → Việt',
-    url: 'sample://manga/chapter-1',
-    src: 'ja',
-    tgt: 'vi',
-  },
-  {
-    label: 'Manhwa Solo Hunter (KR)',
-    flag: '🇰🇷',
-    sub: 'Tiếng Hàn → Việt',
-    url: 'sample://manhwa/action',
-    src: 'ko',
-    tgt: 'vi',
-  },
-  {
-    label: 'Manhua Tu Tiên (ZH)',
-    flag: '🇨🇳',
-    sub: 'Tiếng Trung → Việt',
-    url: 'sample://manhua/cultivation',
-    src: 'zh',
-    tgt: 'vi',
-  },
-];
+import JSZip from 'jszip';
+import { RecentItem } from '../types';
 
 interface UrlInputCardProps {
   onSubmit: (url: string, sourceLang: string, targetLang: string, images?: string[]) => Promise<void>;
   isLoading: boolean;
   errorMessage?: string | null;
-  onOpenSamples: () => void;
+  onOpenSettings: () => void;
+  onResumeRecent?: (item: RecentItem) => void;
 }
+
+const SOURCES = [
+  { id: 'jp', label: 'J-Comic (JP)', lang: 'ja', hint: 'Manga Nhật (Tiếng Nhật)' },
+  { id: 'kr', label: 'ManhwaHub (KR)', lang: 'ko', hint: 'Manhwa Hàn (Tiếng Hàn)' },
+  { id: 'en', label: 'MangaPlus (EN)', lang: 'en', hint: 'Truyện tiếng Anh' },
+  { id: 'gl', label: 'Webtoons (GL)', lang: 'ko', hint: 'Webtoon bản quốc tế' },
+  { id: 'custom', label: 'Generic Web URL', lang: 'auto', hint: 'Dán liên kết web bất kỳ' },
+];
 
 export const UrlInputCard: React.FC<UrlInputCardProps> = ({
   onSubmit,
   isLoading,
   errorMessage,
-  onOpenSamples,
+  onOpenSettings,
+  onResumeRecent,
 }) => {
-  const [activeTab, setActiveTab] = useState<'url' | 'upload'>('url');
   const [url, setUrl] = useState('');
   const [sourceLang, setSourceLang] = useState('auto');
-  const [targetLang, setTargetLang] = useState('vi');
+  const [targetLang] = useState('vi'); // Always Vietnamese target as requested
   const [uploadedImages, setUploadedImages] = useState<string[]>([]);
+  const [isProcessingZip, setIsProcessingZip] = useState(false);
+  const [recents, setRecents] = useState<RecentItem[]>([]);
+  const [showLangPicker, setShowLangPicker] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const zipInputRef = useRef<HTMLInputElement>(null);
+
+  // Load recents from localStorage
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('COMIC_TRANS_RECENTS');
+      if (stored) {
+        setRecents(JSON.parse(stored));
+      }
+    } catch {
+      // Ignore
+    }
+  }, []);
 
   const handlePaste = async () => {
     try {
       const text = await navigator.clipboard.readText();
-      if (text) setUrl(text.trim());
-    } catch (e) {
-      console.warn('Clipboard read failed:', e);
+      if (text) {
+        setUrl(text.trim());
+      }
+    } catch {
+      // Fallback
     }
+  };
+
+  const handleSourceClick = (source: typeof SOURCES[0]) => {
+    setSourceLang(source.lang);
+    const inputEl = document.getElementById('comic-url-input');
+    inputEl?.focus();
   };
 
   const handleFilesSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -104,263 +98,411 @@ export const UrlInputCard: React.FC<UrlInputCardProps> = ({
     });
   };
 
+  // Handle CBZ / ZIP extraction directly in browser
+  const handleZipSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsProcessingZip(true);
+    try {
+      const zip = new JSZip();
+      const contents = await zip.loadAsync(file);
+      const extractedImages: string[] = [];
+
+      // Sort files naturally by filename
+      const fileNames = Object.keys(contents.files)
+        .filter((name) => !name.startsWith('__MACOSX') && /\.(jpe?g|png|webp)$/i.test(name))
+        .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+
+      for (const fileName of fileNames) {
+        const zipEntry = contents.files[fileName];
+        if (!zipEntry.dir) {
+          const blob = await zipEntry.async('blob');
+          const dataUrl = await new Promise<string>((resolve) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result as string);
+            reader.readAsDataURL(blob);
+          });
+          extractedImages.push(dataUrl);
+        }
+      }
+
+      if (extractedImages.length > 0) {
+        setUploadedImages((prev) => [...prev, ...extractedImages]);
+      }
+    } catch (err) {
+      console.error('Lỗi đọc file nén:', err);
+    } finally {
+      setIsProcessingZip(false);
+    }
+  };
+
   const removeUploadedImage = (idx: number) => {
     setUploadedImages((prev) => prev.filter((_, i) => i !== idx));
   };
 
-  const handleQuickSampleClick = (sample: typeof QUICK_SAMPLES[0]) => {
-    setActiveTab('url');
-    setUrl(sample.url);
-    setSourceLang(sample.src);
-    setTargetLang(sample.tgt);
-    onSubmit(sample.url, sample.src, sample.tgt);
+  const clearRecents = () => {
+    localStorage.removeItem('COMIC_TRANS_RECENTS');
+    setRecents([]);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (activeTab === 'url') {
-      if (!url.trim()) return;
-      onSubmit(url.trim(), sourceLang, targetLang);
-    } else {
-      if (uploadedImages.length === 0) return;
+    if (uploadedImages.length > 0) {
       onSubmit('', sourceLang, targetLang, uploadedImages);
+    } else if (url.trim()) {
+      onSubmit(url.trim(), sourceLang, targetLang);
     }
   };
 
   return (
-    <div className="w-full max-w-xl mx-auto bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-6 shadow-xl shadow-slate-950/40 space-y-4">
-      {/* 1-Click Quick Samples Test Bar */}
-      <div>
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-[11px] font-bold text-indigo-400 uppercase tracking-wider flex items-center gap-1.5">
-            <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-            Thử nhanh 1-chạm (Test ngay không cần link)
-          </span>
-          <button
-            type="button"
-            onClick={onOpenSamples}
-            className="text-[11px] text-slate-400 hover:text-slate-200 transition-colors"
-          >
-            Xem tất cả →
-          </button>
-        </div>
-        <div className="grid grid-cols-3 gap-2">
-          {QUICK_SAMPLES.map((sample) => (
+    <div className="w-full max-w-md mx-auto space-y-6 animate-fadeIn pb-12 select-none">
+      {/* Brand & Subtitle (Matches User Mockup Exactly) */}
+      <div className="pt-2 text-left">
+        <h1 className="text-3xl sm:text-4xl font-serif-logo font-bold tracking-tight leading-none text-zinc-100 flex items-center">
+          <span>Comic</span>
+          <span className="italic text-[#e06b3a] ml-0.5">Trans</span>
+        </h1>
+        <p className="text-[10px] sm:text-[11px] font-semibold tracking-[0.2em] text-zinc-500 uppercase mt-2">
+          DỊCH VÀ ĐỌC TRUYỆN THEO CÁCH CỦA BẠN.
+        </p>
+      </div>
+
+      {/* Pill Search / URL Input Field (Matches Mockup) */}
+      <form onSubmit={handleSubmit} className="relative">
+        <div className="relative flex items-center w-full bg-[#18181c]/90 hover:bg-[#1f1f24] border border-zinc-800 focus-within:border-zinc-600 rounded-full px-4 py-3 transition-all shadow-lg shadow-black/40">
+          <Globe className="w-4 h-4 text-zinc-400 flex-shrink-0 mr-3" />
+          <input
+            id="comic-url-input"
+            type="url"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            placeholder="Dán liên kết truyện để dịch..."
+            className="w-full bg-transparent text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none pr-16"
+          />
+          {url ? (
             <button
-              key={sample.label}
               type="button"
-              onClick={() => handleQuickSampleClick(sample)}
-              className="p-2 bg-slate-800/80 hover:bg-slate-800 border border-slate-700/70 hover:border-indigo-500/50 rounded-xl text-left transition-all active:scale-[0.98] group flex flex-col justify-between"
+              onClick={() => setUrl('')}
+              className="text-zinc-500 hover:text-zinc-300 p-1 mr-1"
             >
-              <div className="flex items-center gap-1 mb-1">
-                <span className="text-base">{sample.flag}</span>
-                <span className="text-[11px] font-bold text-slate-200 group-hover:text-indigo-300 transition-colors line-clamp-1">
-                  {sample.label.split(' ')[0]}
+              <X className="w-4 h-4" />
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={handlePaste}
+              className="text-[11px] font-medium text-zinc-400 hover:text-orange-400 px-2 py-0.5 rounded-full bg-zinc-800/80 border border-zinc-700/50 transition-colors"
+              title="Dán từ khay nhớ tạm"
+            >
+              Dán
+            </button>
+          )}
+          {url.trim() && (
+            <button
+              type="submit"
+              disabled={isLoading}
+              className="ml-2 w-7 h-7 rounded-full bg-[#e06b3a] hover:bg-orange-600 text-white flex items-center justify-center flex-shrink-0 transition-transform active:scale-95 shadow-md shadow-orange-600/30"
+            >
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+      </form>
+
+      {/* Uploaded Images Preview if any */}
+      {uploadedImages.length > 0 && (
+        <div className="bg-[#141417] border border-zinc-800/90 rounded-2xl p-3 space-y-3">
+          <div className="flex items-center justify-between text-xs text-zinc-400">
+            <span>Đã chọn <strong className="text-zinc-200">{uploadedImages.length}</strong> trang ảnh</span>
+            <button
+              type="button"
+              onClick={() => setUploadedImages([])}
+              className="text-rose-400 hover:text-rose-300 text-[11px]"
+            >
+              Xóa tất cả
+            </button>
+          </div>
+          <div className="grid grid-cols-4 gap-2 max-h-36 overflow-y-auto pr-1">
+            {uploadedImages.map((imgSrc, idx) => (
+              <div key={idx} className="relative aspect-[3/4] rounded-lg overflow-hidden border border-zinc-700/60 group">
+                <img src={imgSrc} alt={`Trang ${idx + 1}`} className="w-full h-full object-cover" />
+                <button
+                  type="button"
+                  onClick={() => removeUploadedImage(idx)}
+                  className="absolute top-1 right-1 p-0.5 bg-black/70 hover:bg-rose-600 text-white rounded-full transition-colors"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+                <span className="absolute bottom-1 left-1 px-1 bg-black/70 text-[9px] rounded text-zinc-300">
+                  #{idx + 1}
                 </span>
               </div>
-              <span className="text-[10px] text-slate-400 block font-mono">
-                {sample.sub}
-              </span>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={handleSubmit}
+            disabled={isLoading}
+            className="w-full py-2.5 bg-[#e06b3a] hover:bg-orange-600 text-white text-xs font-semibold rounded-xl flex items-center justify-center gap-1.5 transition-colors shadow-md shadow-orange-900/30"
+          >
+            <span>Bắt đầu dịch {uploadedImages.length} trang</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
+      {/* Section 1: Translation Sources (Nguồn dịch) */}
+      <div className="space-y-2.5">
+        <h2 className="text-sm font-semibold text-zinc-200">Nguồn dịch</h2>
+        <div className="flex flex-wrap gap-2">
+          {SOURCES.map((src) => (
+            <button
+              key={src.id}
+              type="button"
+              onClick={() => handleSourceClick(src)}
+              className="px-3.5 py-1.5 text-xs font-medium rounded-xl bg-[#141417] hover:bg-[#1c1c21] text-zinc-300 hover:text-zinc-100 border border-zinc-800/80 hover:border-zinc-700 transition-all active:scale-95 text-left"
+              title={src.hint}
+            >
+              {src.label}
             </button>
           ))}
         </div>
       </div>
 
-      <div className="relative flex items-center justify-center my-1">
-        <div className="absolute inset-0 flex items-center">
-          <div className="w-full border-t border-slate-800"></div>
+      {/* Section 2: Recent (Gần đây) */}
+      <div className="space-y-3 pt-2">
+        <div className="flex items-center justify-between">
+          <h2 className="text-base font-serif-logo font-bold text-zinc-100">Gần đây</h2>
+          {recents.length > 0 && (
+            <button
+              onClick={clearRecents}
+              className="text-[11px] text-zinc-500 hover:text-rose-400 transition-colors flex items-center gap-1"
+            >
+              <Trash2 className="w-3 h-3" />
+              <span>Xóa lịch sử</span>
+            </button>
+          )}
         </div>
-        <div className="relative px-3 bg-slate-900 text-[11px] uppercase tracking-wider text-slate-500 font-semibold">
-          Hoặc dịch từ URL / Ảnh của bạn
-        </div>
-      </div>
 
-      {/* Mode Switcher Tabs */}
-      <div className="flex bg-slate-800/80 p-1 rounded-xl border border-slate-700/60">
-        <button
-          type="button"
-          onClick={() => setActiveTab('url')}
-          className={`flex-1 py-1.5 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-all ${
-            activeTab === 'url'
-              ? 'bg-indigo-600 text-white shadow-sm'
-              : 'text-slate-400 hover:text-slate-200'
-          }`}
-        >
-          <Link2 className="w-3.5 h-3.5" />
-          <span>Dán URL Truyện</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab('upload')}
-          className={`flex-1 py-1.5 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-all ${
-            activeTab === 'upload'
-              ? 'bg-indigo-600 text-white shadow-sm'
-              : 'text-slate-400 hover:text-slate-200'
-          }`}
-        >
-          <Upload className="w-3.5 h-3.5" />
-          <span>Tải Ảnh / Chụp màn hình</span>
-        </button>
-      </div>
-
-      <form onSubmit={handleSubmit} className="space-y-4">
-        {/* URL Input Box */}
-        {activeTab === 'url' ? (
-          <div>
-            <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
-              URL Trang / Chapter Truyện
-            </label>
-            <div className="relative flex items-center">
-              <div className="absolute left-3.5 text-slate-400 pointer-events-none">
-                <Link2 className="w-4 h-4" />
+        {recents.length === 0 ? (
+          /* Empty State Matches Mockup Exactly */
+          <div className="flex items-center gap-4 p-1">
+            {/* Dashed placeholder box */}
+            <div className="w-24 h-32 rounded-2xl border border-dashed border-zinc-800 bg-[#121215]/60 flex items-center justify-center flex-shrink-0">
+              <div className="w-10 h-10 rounded-xl bg-orange-500/10 border border-orange-500/20 flex items-center justify-center text-[#e06b3a]">
+                <FileText className="w-5 h-5" />
               </div>
-              <input
-                type="url"
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                placeholder="https://truyen.../chapter-123 hoặc dán link ảnh manga"
-                required={activeTab === 'url'}
-                className="w-full pl-10 pr-20 py-3 bg-slate-800/90 border border-slate-700/80 rounded-xl text-slate-100 placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
-              />
-              <button
-                type="button"
-                onClick={handlePaste}
-                className="absolute right-2 px-2.5 py-1 text-xs font-medium bg-slate-700 hover:bg-slate-600 text-slate-300 rounded-lg transition-colors flex items-center gap-1 active:scale-95"
-                title="Dán từ Clipboard"
-              >
-                <Clipboard className="w-3 h-3" />
-                <span>Dán</span>
-              </button>
             </div>
-            <p className="text-[11px] text-slate-500 mt-1.5">
-              Hỗ trợ hầu hết các trang đọc truyện Manga/Manhwa phổ biến hoặc URL ảnh trực tiếp (.jpg, .png, .webp).
-            </p>
+
+            {/* Description Text */}
+            <div className="space-y-1 pr-2">
+              <h3 className="text-sm font-semibold text-zinc-200">
+                Chưa có bản dịch nào
+              </h3>
+              <p className="text-xs text-zinc-500 leading-relaxed">
+                Dán một URL, chọn nguồn truyện, hoặc tải tệp lên để bắt đầu
+              </p>
+            </div>
           </div>
         ) : (
-          /* File Upload Box */
-          <div>
-            <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
-              Tải trang ảnh hoặc chụp màn hình truyện
-            </label>
-            <div
-              onClick={() => fileInputRef.current?.click()}
-              className="border-2 border-dashed border-slate-700 hover:border-indigo-500/70 bg-slate-800/40 hover:bg-slate-800/70 rounded-xl p-4 sm:p-6 text-center cursor-pointer transition-all flex flex-col items-center justify-center space-y-2"
-            >
-              <div className="p-3 bg-indigo-500/10 rounded-full text-indigo-400">
-                <ImageIcon className="w-6 h-6" />
+          /* Recent Items List */
+          <div className="space-y-2">
+            {recents.slice(0, 3).map((item) => (
+              <div
+                key={item.id}
+                onClick={() => onResumeRecent?.(item)}
+                className="flex items-center gap-3 p-2.5 rounded-xl bg-[#141417] hover:bg-[#1a1a1f] border border-zinc-800 cursor-pointer transition-all active:scale-[0.99] group"
+              >
+                <div className="w-12 h-16 rounded-lg bg-zinc-900 border border-zinc-800 overflow-hidden flex-shrink-0">
+                  {item.thumbnail ? (
+                    <img src={item.thumbnail} alt={item.title} className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-[#e06b3a]">
+                      <BookOpen className="w-5 h-5" />
+                    </div>
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h4 className="text-xs font-semibold text-zinc-200 truncate group-hover:text-orange-400 transition-colors">
+                    {item.title}
+                  </h4>
+                  <p className="text-[11px] text-zinc-500 mt-0.5">
+                    {item.completedPages}/{item.totalPages} trang • {item.timestamp}
+                  </p>
+                  <span className="inline-block mt-1 text-[10px] text-orange-400/90 font-medium">
+                    Nhấn để tiếp tục đọc →
+                  </span>
+                </div>
               </div>
-              <div className="text-xs text-slate-300 font-medium">
-                Kéo thả ảnh vào đây hoặc <span className="text-indigo-400 underline">chọn từ thiết bị</span>
-              </div>
-              <div className="text-[11px] text-slate-500">
-                Hỗ trợ PNG, JPG, WEBP (Có thể chọn nhiều trang cùng lúc)
-              </div>
-              <input
-                ref={fileInputRef}
-                type="file"
-                multiple
-                accept="image/*"
-                onChange={handleFilesSelected}
-                className="hidden"
-              />
-            </div>
-
-            {/* Uploaded Previews */}
-            {uploadedImages.length > 0 && (
-              <div className="mt-3 grid grid-cols-4 sm:grid-cols-6 gap-2">
-                {uploadedImages.map((imgSrc, idx) => (
-                  <div key={idx} className="relative group rounded-lg overflow-hidden border border-slate-700 aspect-[3/4] bg-slate-950">
-                    <img src={imgSrc} alt={`Trang ${idx + 1}`} className="w-full h-full object-cover" />
-                    <button
-                      type="button"
-                      onClick={() => removeUploadedImage(idx)}
-                      className="absolute top-1 right-1 p-0.5 bg-rose-600/90 hover:bg-rose-500 text-white rounded-full transition-colors"
-                      title="Xóa trang này"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                    <span className="absolute bottom-1 left-1 px-1 py-0.2 text-[9px] font-mono bg-black/70 rounded text-slate-300">
-                      #{idx + 1}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
+            ))}
           </div>
         )}
+      </div>
 
-        {/* Language Selection Selectors */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-          {/* Source Lang */}
-          <div>
-            <label className="block text-xs font-medium text-slate-400 mb-1.5 flex items-center gap-1">
-              <Languages className="w-3.5 h-3.5 text-indigo-400" />
-              <span>Translate From (Ngôn ngữ gốc)</span>
-            </label>
-            <select
-              value={sourceLang}
-              onChange={(e) => setSourceLang(e.target.value)}
-              className="w-full py-2.5 px-3 bg-slate-800 border border-slate-700 rounded-xl text-slate-200 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors"
-            >
-              {SOURCE_LANGUAGES.map((lang) => (
-                <option key={lang.code} value={lang.code} className="bg-slate-900 text-slate-200">
-                  {lang.flag} {lang.name}
-                </option>
-              ))}
-            </select>
-          </div>
+      {/* Section 3: Translate your own files (Tự tải tệp lên) */}
+      <div className="space-y-2.5 pt-2">
+        <div>
+          <h2 className="text-sm font-semibold text-zinc-200">Tự tải tệp lên</h2>
+          <span className="text-[11px] text-zinc-500 block">(hoặc định dạng tương tự)</span>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {/* Upload Images / Album */}
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="px-3.5 py-1.5 text-xs font-medium rounded-xl bg-[#141417] hover:bg-[#1c1c21] text-zinc-300 hover:text-zinc-100 border border-zinc-800/80 hover:border-zinc-700 transition-all active:scale-95 flex items-center gap-1.5"
+          >
+            <ImageIcon className="w-3.5 h-3.5 text-zinc-400" />
+            <span>Tải ảnh / Album</span>
+          </button>
 
-          {/* Target Lang */}
-          <div>
-            <label className="block text-xs font-medium text-slate-400 mb-1.5 flex items-center gap-1">
-              <Globe className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Translate To (Dịch sang)</span>
-            </label>
-            <select
-              value={targetLang}
-              onChange={(e) => setTargetLang(e.target.value)}
-              className="w-full py-2.5 px-3 bg-slate-800 border border-slate-700 rounded-xl text-slate-200 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-colors"
-            >
-              {TARGET_LANGUAGES.map((lang) => (
-                <option key={lang.code} value={lang.code} className="bg-slate-900 text-slate-200">
-                  {lang.flag} {lang.name}
-                </option>
-              ))}
-            </select>
+          {/* Upload PDF */}
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="px-3.5 py-1.5 text-xs font-medium rounded-xl bg-[#141417] hover:bg-[#1c1c21] text-zinc-300 hover:text-zinc-100 border border-zinc-800/80 hover:border-zinc-700 transition-all active:scale-95 flex items-center gap-1.5"
+          >
+            <FileText className="w-3.5 h-3.5 text-zinc-400" />
+            <span>Tải tệp PDF</span>
+          </button>
+
+          {/* Upload CBZ / ZIP */}
+          <button
+            type="button"
+            onClick={() => zipInputRef.current?.click()}
+            disabled={isProcessingZip}
+            className="px-3.5 py-1.5 text-xs font-medium rounded-xl bg-[#141417] hover:bg-[#1c1c21] text-zinc-300 hover:text-zinc-100 border border-zinc-800/80 hover:border-zinc-700 transition-all active:scale-95 flex items-center gap-1.5"
+          >
+            <FolderArchive className="w-3.5 h-3.5 text-zinc-400" />
+            <span>{isProcessingZip ? 'Đang giải nén...' : 'Tải tệp CBZ / ZIP'}</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Section 4: Reading in another app (Đọc trên ứng dụng khác) */}
+      <div className="space-y-2.5 pt-2">
+        <h2 className="text-sm font-semibold text-zinc-200">Đọc trên ứng dụng khác</h2>
+        <div className="flex flex-wrap gap-2">
+          {/* Quick Capture (Camera directly) */}
+          <button
+            type="button"
+            onClick={() => cameraInputRef.current?.click()}
+            className="px-3.5 py-1.5 text-xs font-medium rounded-xl bg-[#141417] hover:bg-[#1c1c21] text-zinc-300 hover:text-zinc-100 border border-zinc-800/80 hover:border-zinc-700 transition-all active:scale-95 flex items-center gap-1.5"
+          >
+            <Camera className="w-3.5 h-3.5 text-zinc-400" />
+            <span>Chụp nhanh</span>
+          </button>
+
+          {/* Screenshot */}
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="px-3.5 py-1.5 text-xs font-medium rounded-xl bg-[#141417] hover:bg-[#1c1c21] text-zinc-300 hover:text-zinc-100 border border-zinc-800/80 hover:border-zinc-700 transition-all active:scale-95 flex items-center gap-1.5"
+          >
+            <span>Ảnh chụp màn hình</span>
+          </button>
+
+          {/* URL Sniffer (Read Clipboard automatically) */}
+          <button
+            type="button"
+            onClick={handlePaste}
+            className="px-3.5 py-1.5 text-xs font-medium rounded-xl bg-[#141417] hover:bg-[#1c1c21] text-zinc-300 hover:text-zinc-100 border border-zinc-800/80 hover:border-zinc-700 transition-all active:scale-95 flex items-center gap-1.5"
+          >
+            <Clipboard className="w-3.5 h-3.5 text-zinc-400" />
+            <span>Bắt link tự động</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Subtle Source Language Switcher Option */}
+      <div className="pt-2 flex items-center justify-start text-xs text-zinc-500">
+        <button
+          type="button"
+          onClick={() => setShowLangPicker(!showLangPicker)}
+          className="flex items-center gap-1.5 hover:text-zinc-300 transition-colors"
+        >
+          <Languages className="w-3.5 h-3.5 text-[#e06b3a]" />
+          <span>
+            Ngôn ngữ gốc: <strong className="text-zinc-400">{sourceLang === 'auto' ? 'Tự nhận diện' : sourceLang.toUpperCase()}</strong> → <strong className="text-[#e06b3a]">Tiếng Việt</strong>
+          </span>
+        </button>
+      </div>
+
+      {/* Expandable Language Picker */}
+      {showLangPicker && (
+        <div className="bg-[#141417] border border-zinc-800 rounded-xl p-3 space-y-2 animate-fadeIn text-xs">
+          <span className="text-zinc-400 font-medium block">Chọn ngôn ngữ của truyện gốc:</span>
+          <div className="grid grid-cols-2 gap-1.5">
+            {[
+              { code: 'auto', name: 'Tự động nhận diện' },
+              { code: 'ja', name: 'Tiếng Nhật (Manga)' },
+              { code: 'ko', name: 'Tiếng Hàn (Manhwa)' },
+              { code: 'zh', name: 'Tiếng Trung (Manhua)' },
+              { code: 'en', name: 'Tiếng Anh (Comic)' },
+            ].map((item) => (
+              <button
+                key={item.code}
+                type="button"
+                onClick={() => {
+                  setSourceLang(item.code);
+                  setShowLangPicker(false);
+                }}
+                className={`py-1.5 px-2.5 rounded-lg text-left text-xs transition-colors ${
+                  sourceLang === item.code
+                    ? 'bg-[#e06b3a] text-white font-medium'
+                    : 'bg-zinc-900 text-zinc-300 hover:bg-zinc-800'
+                }`}
+              >
+                {item.name}
+              </button>
+            ))}
           </div>
         </div>
+      )}
 
-        {/* Error message banner */}
-        {errorMessage && (
-          <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-start gap-2 animate-fadeIn">
-            <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0 mt-0.5" />
-            <div className="flex-1 leading-relaxed">{errorMessage}</div>
-          </div>
-        )}
+      {/* Error Message if any */}
+      {errorMessage && (
+        <div className="p-3 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-start gap-2.5 animate-fadeIn">
+          <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0 mt-0.5" />
+          <div className="flex-1 leading-relaxed">{errorMessage}</div>
+        </div>
+      )}
 
-        {/* Submit Primary Action Button */}
-        <button
-          type="submit"
-          disabled={isLoading || (activeTab === 'url' ? !url.trim() : uploadedImages.length === 0)}
-          className="w-full py-3 px-4 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-semibold rounded-xl text-sm shadow-lg shadow-indigo-600/25 flex items-center justify-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.99]"
-        >
-          {isLoading ? (
-            <>
-              <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-              <span>Đang trích xuất & xử lý OCR/Dịch truyện...</span>
-            </>
-          ) : (
-            <>
-              <span>
-                {activeTab === 'url'
-                  ? 'Bắt đầu Dịch Chapter (Translate)'
-                  : `Dịch ${uploadedImages.length} trang đã tải lên`}
-              </span>
-              <ArrowRight className="w-4 h-4" />
-            </>
-          )}
-        </button>
-      </form>
+      {/* Hidden File Inputs */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        accept="image/*"
+        onChange={handleFilesSelected}
+        className="hidden"
+      />
+      <input
+        ref={cameraInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        onChange={handleFilesSelected}
+        className="hidden"
+      />
+      <input
+        ref={zipInputRef}
+        type="file"
+        accept=".zip,.cbz"
+        onChange={handleZipSelected}
+        className="hidden"
+      />
+
+      {/* Floating Spark Icon at bottom right (Matches the Star/Sparkle in Mockup) */}
+      <button
+        type="button"
+        onClick={onOpenSettings}
+        className="fixed bottom-6 right-6 w-11 h-11 rounded-full bg-[#18181c] border border-zinc-700/70 hover:border-orange-500/60 text-[#e06b3a] shadow-xl shadow-black/60 flex items-center justify-center transition-all hover:scale-105 active:scale-95 z-30 group"
+        title="Cài đặt AI & Gemini API Key"
+      >
+        <Sparkles className="w-5 h-5 text-[#e06b3a] group-hover:rotate-12 transition-transform" />
+      </button>
     </div>
   );
 };

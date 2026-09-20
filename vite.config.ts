@@ -15,12 +15,13 @@ export default defineConfig(() => {
         includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'icon.svg', 'pwa-192x192.png', 'pwa-512x512.png'],
         manifest: {
           id: './',
-          name: 'Manga Translator PWA',
-          short_name: 'MangaTrans',
-          description: 'Dịch manga/manhwa/manhua từ URL với OCR, inpainting và typesetting tự động.',
-          theme_color: '#0f172a',
-          background_color: '#020617',
+          name: 'ComicTrans',
+          short_name: 'ComicTrans',
+          description: 'Dịch và đọc truyện tranh thông minh theo cách của bạn trên điện thoại di động.',
+          theme_color: '#0d0d0f',
+          background_color: '#0d0d0f',
           display: 'standalone',
+          orientation: 'portrait',
           start_url: './',
           scope: './',
           icons: [

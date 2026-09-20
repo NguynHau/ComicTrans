@@ -62,13 +62,14 @@ export interface LanguageOption {
   flag: string;
 }
 
-export interface SampleChapter {
+export interface RecentItem {
   id: string;
   title: string;
-  type: 'Manga (JP)' | 'Manhwa (KR)' | 'Manhua (ZH)';
-  url: string;
-  source_language: string;
-  target_language: string;
-  thumbnail: string;
-  description: string;
+  sourceUrl?: string;
+  thumbnail?: string;
+  totalPages: number;
+  completedPages: number;
+  timestamp: string;
+  job: MangaJob;
+  pages: MangaPage[];
 }
