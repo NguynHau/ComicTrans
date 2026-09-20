@@ -1,3 +1,6 @@
+import type { DetailedError, ErrorCategory } from './lib/errorUtils';
+export type { DetailedError, ErrorCategory };
+
 export interface OCRBoundingBox {
   x: number;
   y: number;
@@ -34,6 +37,7 @@ export interface MangaPage {
   processed_image?: string;
   status: 'queued' | 'processing' | 'completed' | 'failed';
   error_message?: string;
+  detailed_error?: DetailedError;
   created_at: string;
   updated_at: string;
   ocr_results: OCRBoxItem[];
@@ -51,6 +55,7 @@ export interface MangaJob {
   current_page: number;
   error_code?: string;
   error_message?: string;
+  detailed_error?: DetailedError;
   created_at: string;
   updated_at: string;
   pages?: MangaPage[];

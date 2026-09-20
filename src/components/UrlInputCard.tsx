@@ -12,15 +12,19 @@ import {
   BookOpen,
   ArrowRight,
   X,
-  Languages
+  Languages,
+  AlertTriangle,
+  Key,
+  Lightbulb,
 } from 'lucide-react';
 import JSZip from 'jszip';
-import { RecentItem } from '../types';
+import { RecentItem, DetailedError } from '../types';
 
 interface UrlInputCardProps {
   onSubmit: (url: string, sourceLang: string, targetLang: string, images?: string[]) => Promise<void>;
   isLoading: boolean;
   errorMessage?: string | null;
+  detailedError?: DetailedError | null;
   onOpenSettings: () => void;
   onResumeRecent?: (item: RecentItem) => void;
 }
@@ -37,6 +41,7 @@ export const UrlInputCard: React.FC<UrlInputCardProps> = ({
   onSubmit,
   isLoading,
   errorMessage,
+  detailedError,
   onOpenSettings,
   onResumeRecent,
 }) => {
@@ -209,6 +214,51 @@ export const UrlInputCard: React.FC<UrlInputCardProps> = ({
           )}
         </div>
       </form>
+
+      {/* Granular Error Banner on Landing */}
+      {(detailedError || errorMessage) && (
+        <div className="p-3.5 rounded-2xl bg-rose-950/40 border border-rose-500/40 text-rose-200 text-xs space-y-2.5 animate-fadeIn shadow-lg shadow-black/40">
+          <div className="flex items-start gap-2.5">
+            <AlertTriangle className="w-4 h-4 text-rose-400 flex-shrink-0 mt-0.5" />
+            <div className="space-y-1 w-full">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                  {detailedError?.categoryLabel || 'Lỗi thực thi'}
+                </span>
+              </div>
+              <h4 className="font-semibold text-rose-100 text-xs sm:text-sm">
+                {detailedError?.title || 'Không thể bắt đầu dịch truyện'}
+              </h4>
+              <p className="text-zinc-300 text-xs leading-relaxed">
+                {detailedError?.message || errorMessage}
+              </p>
+            </div>
+          </div>
+
+          {detailedError?.suggestion && (
+            <div className="p-2.5 rounded-xl bg-[#141417]/90 border border-amber-500/30 text-amber-200/90 text-[11px] leading-relaxed flex items-start gap-2">
+              <Lightbulb className="w-3.5 h-3.5 text-amber-400 flex-shrink-0 mt-0.5" />
+              <div>
+                <strong className="text-amber-300 font-medium">Gợi ý xử lý: </strong>
+                <span>{detailedError.suggestion}</span>
+              </div>
+            </div>
+          )}
+
+          <div className="flex flex-wrap gap-2 pt-0.5">
+            {(detailedError?.actionType === 'open_settings' || !detailedError) && (
+              <button
+                type="button"
+                onClick={onOpenSettings}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-[#e06b3a] hover:bg-orange-600 text-white rounded-xl font-medium text-xs transition-colors shadow-md shadow-orange-950/40"
+              >
+                <Key className="w-3.5 h-3.5" />
+                <span>{detailedError?.actionLabel || 'Cấu hình API Key'}</span>
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Uploaded Images Preview if any */}
       {uploadedImages.length > 0 && (

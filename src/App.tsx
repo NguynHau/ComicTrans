@@ -7,19 +7,21 @@ import { JobProgressCard } from './components/JobProgressCard';
 import { MangaReader } from './components/MangaReader';
 import { ApiDocsModal } from './components/ApiDocsModal';
 import { SettingsModal } from './components/SettingsModal';
-import { MangaJob, MangaPage, RecentItem } from './types';
+import { MangaJob, MangaPage, RecentItem, DetailedError } from './types';
 import { RefreshCw } from 'lucide-react';
 import {
   extractComicImagesClient,
   runOcrAndTranslationClient,
   renderInpaintedTranslatedImageClient,
 } from './lib/clientPipeline';
+import { classifyPipelineError } from './lib/errorUtils';
 
 export function App() {
   const [activeJob, setActiveJob] = useState<MangaJob | null>(null);
   const [pages, setPages] = useState<MangaPage[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [detailedError, setDetailedError] = useState<DetailedError | null>(null);
   const [isApiDocsModalOpen, setIsApiDocsModalOpen] = useState<boolean>(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState<boolean>(false);
 
@@ -37,13 +39,16 @@ export function App() {
   ) => {
     setIsLoading(true);
     setErrorMessage(null);
+    setDetailedError(null);
     setActiveJob(null);
     setPages([]);
 
     // 1. Get the API Key
     const apiKey = localStorage.getItem('GEMINI_API_KEY') || import.meta.env.VITE_GEMINI_API_KEY || '';
     if (!apiKey) {
-      setErrorMessage("Chưa tìm thấy Gemini API Key. Vui lòng bấm vào biểu tượng bánh răng (Cài đặt) ở góc trên bên phải để nhập mã khóa API của bạn trước khi bắt đầu dịch.");
+      const missingKeyErr = classifyPipelineError(new Error('API_KEY_MISSING'));
+      setDetailedError(missingKeyErr);
+      setErrorMessage(missingKeyErr.message);
       setIsLoading(false);
       return;
     }
@@ -76,7 +81,7 @@ export function App() {
       }
 
       if (resolvedImages.length === 0) {
-        throw new Error("Không phát hiện trang ảnh nào từ nguồn này.");
+        throw new Error("NO_IMAGES_FOUND: Không phát hiện trang ảnh nào từ nguồn này.");
       }
 
       // Check if job was cancelled
@@ -109,6 +114,7 @@ export function App() {
 
       // 4. Process each page sequentially
       let completedCount = 0;
+      let lastFailureError: DetailedError | null = null;
 
       for (let i = 0; i < initialPages.length; i++) {
         // Double check cancellation
@@ -162,12 +168,21 @@ export function App() {
 
         } catch (err: any) {
           console.error(`Page ${i + 1} failed:`, err);
-          // Update page to failed
+          const classified = classifyPipelineError(err);
+          lastFailureError = classified;
+
+          // Update page to failed with classified details
           setPages(prev => prev.map(p => p.id === page.id ? {
             ...p,
             status: 'failed',
-            error_message: err.message || 'Lỗi không xác định khi dịch trang.',
+            error_message: classified.message,
+            detailed_error: classified,
           } : p));
+
+          // If API Key is invalid or missing, stop the loop immediately instead of hammering repeatedly
+          if (classified.category === 'API_KEY_INVALID' || classified.category === 'API_KEY_MISSING') {
+            break;
+          }
         }
       }
 
@@ -209,17 +224,22 @@ export function App() {
         return {
           ...prev,
           status: hasCompleted ? 'completed' : 'failed',
-          error_message: hasCompleted ? undefined : 'Tất cả các trang đều dịch thất bại. Hãy kiểm tra kết nối mạng hoặc API Key.'
+          error_message: hasCompleted ? undefined : (lastFailureError?.message || 'Tất cả các trang đều dịch thất bại.'),
+          detailed_error: hasCompleted ? undefined : (lastFailureError || undefined),
         };
       });
 
     } catch (err: any) {
       console.error(err);
-      setErrorMessage(err.message || 'Lỗi trích xuất hoặc xử lý truyện.');
+      const classified = classifyPipelineError(err);
+      setDetailedError(classified);
+      setErrorMessage(classified.message);
       setIsLoading(false);
       setActiveJob(prev => prev && prev.job_id === job_id ? {
         ...prev,
         status: 'failed',
+        error_message: classified.message,
+        detailed_error: classified,
       } : prev);
     }
   };
@@ -240,13 +260,13 @@ export function App() {
     const page = pages[pageIndex];
 
     setPages((prev) =>
-      prev.map((p) => (p.id === pageId ? { ...p, status: 'processing', error_message: undefined } : p))
+      prev.map((p) => (p.id === pageId ? { ...p, status: 'processing', error_message: undefined, detailed_error: undefined } : p))
     );
 
     try {
       const apiKey = localStorage.getItem('GEMINI_API_KEY') || import.meta.env.VITE_GEMINI_API_KEY || '';
       if (!apiKey) {
-        throw new Error("Chưa tìm thấy Gemini API Key.");
+        throw new Error("API_KEY_MISSING: Chưa tìm thấy Gemini API Key.");
       }
 
       const { ocr_results, translations } = await runOcrAndTranslationClient(
@@ -271,6 +291,7 @@ export function App() {
                 ocr_results,
                 translations,
                 processed_image,
+                detailed_error: undefined,
               }
             : p
         )
@@ -282,13 +303,20 @@ export function App() {
         return {
           ...prev,
           completed_pages: currentCompleted,
-          status: 'completed'
+          status: 'completed',
+          detailed_error: undefined,
         };
       });
     } catch (err: any) {
       console.error(err);
+      const classified = classifyPipelineError(err);
       setPages((prev) =>
-        prev.map((p) => (p.id === pageId ? { ...p, status: 'failed', error_message: err.message } : p))
+        prev.map((p) => (p.id === pageId ? {
+          ...p,
+          status: 'failed',
+          error_message: classified.message,
+          detailed_error: classified,
+        } : p))
       );
     }
   };
@@ -311,6 +339,7 @@ export function App() {
     setActiveJob(null);
     setPages([]);
     setErrorMessage(null);
+    setDetailedError(null);
   };
 
   const hasReaderView = pages.length > 0;
@@ -339,6 +368,7 @@ export function App() {
             onSubmit={handleStartTranslation}
             isLoading={isLoading}
             errorMessage={errorMessage}
+            detailedError={detailedError}
             onOpenSettings={() => setIsSettingsModalOpen(true)}
             onResumeRecent={handleResumeRecent}
           />
@@ -357,6 +387,8 @@ export function App() {
                   activeJob.target_language
                 )
               }
+              onOpenSettings={() => setIsSettingsModalOpen(true)}
+              onSwitchToUpload={handleReset}
             />
 
             {/* If pages are loaded/processing, show reader */}

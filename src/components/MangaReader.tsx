@@ -12,7 +12,9 @@ import {
   ZoomIn,
   ZoomOut,
   Type,
-  Maximize2
+  Maximize2,
+  AlertTriangle,
+  Lightbulb,
 } from 'lucide-react';
 import JSZip from 'jszip';
 import { MangaJob, MangaPage } from '../types';
@@ -335,22 +337,36 @@ export const MangaReader: React.FC<MangaReaderProps> = ({
                 {/* Overlaid Typesetting / Speech Bubbles */}
                 {renderTypesettingOverlay(currentPage)}
 
-                {/* Failed page indicator */}
+                {/* Failed page indicator with granular diagnostic feedback */}
                 {currentPage.status === 'failed' && (
-                  <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm flex flex-col items-center justify-center p-4 text-center">
-                    <p className="text-rose-400 text-sm font-semibold mb-2">
-                      Lỗi xử lý trang {currentPage.page_number}
-                    </p>
-                    <p className="text-slate-400 text-xs mb-4 max-w-xs">
-                      {currentPage.error_message || 'Không thể OCR hoặc dịch trang này.'}
-                    </p>
-                    <button
-                      onClick={() => onRetryPage(currentPage.id)}
-                      className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-colors"
-                    >
-                      <RotateCcw className="w-3.5 h-3.5" />
-                      <span>Thử lại trang này</span>
-                    </button>
+                  <div className="absolute inset-0 bg-[#0e0e11]/90 backdrop-blur-md flex flex-col items-center justify-center p-5 text-center z-30">
+                    <div className="w-full max-w-xs bg-[#18181c] border border-rose-500/40 rounded-2xl p-4 space-y-2.5 text-left shadow-2xl">
+                      <div className="flex items-center gap-2">
+                        <AlertTriangle className="w-4 h-4 text-rose-400 flex-shrink-0" />
+                        <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                          {currentPage.detailed_error?.categoryLabel || 'Lỗi trang'}
+                        </span>
+                      </div>
+                      <h4 className="text-xs sm:text-sm font-semibold text-rose-100">
+                        {currentPage.detailed_error?.title || `Lỗi xử lý trang ${currentPage.page_number}`}
+                      </h4>
+                      <p className="text-zinc-300 text-xs leading-relaxed">
+                        {currentPage.detailed_error?.message || currentPage.error_message || 'Không thể OCR hoặc dịch trang này.'}
+                      </p>
+                      {currentPage.detailed_error?.suggestion && (
+                        <div className="p-2 rounded-lg bg-black/40 border border-amber-500/20 text-amber-200/90 text-[11px] flex items-start gap-1.5">
+                          <Lightbulb className="w-3.5 h-3.5 text-amber-400 flex-shrink-0 mt-0.5" />
+                          <span>{currentPage.detailed_error.suggestion}</span>
+                        </div>
+                      )}
+                      <button
+                        onClick={() => onRetryPage(currentPage.id)}
+                        className="w-full flex items-center justify-center gap-1.5 text-xs font-semibold py-2 px-3 bg-[#e06b3a] hover:bg-orange-600 text-white rounded-xl transition-colors shadow-lg shadow-orange-950/40"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        <span>Thử lại trang {currentPage.page_number}</span>
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
@@ -422,23 +438,49 @@ export const MangaReader: React.FC<MangaReaderProps> = ({
         </div>
       ) : (
         /* Webtoon Vertical Scroll Mode */
-        <div className="flex flex-col space-y-4 bg-slate-950 p-2 sm:p-4 rounded-2xl border border-slate-800">
+        <div className="flex flex-col space-y-4 bg-[#141417] p-2 sm:p-4 rounded-2xl border border-zinc-800">
           {pages.map((p) => (
             <div
               key={p.id}
-              className="relative w-full bg-slate-900 rounded-xl overflow-hidden shadow-md flex justify-center"
+              className="relative w-full bg-[#18181c] rounded-xl overflow-hidden shadow-md flex justify-center"
             >
-              <img
-                src={showOriginal ? p.source_image : (p.processed_image || p.source_image)}
-                alt={`Trang ${p.page_number}`}
-                className="w-full object-contain"
-                referrerPolicy="no-referrer"
-                loading="lazy"
-              />
-              {renderTypesettingOverlay(p)}
-              <div className="absolute top-2 right-2 px-2 py-0.5 rounded bg-black/60 backdrop-blur-md text-[10px] text-slate-300 font-mono">
-                Trang {p.page_number}
-              </div>
+              {p.status === 'failed' ? (
+                <div className="w-full py-10 px-4 bg-[#18181c] border border-rose-500/30 flex flex-col items-center justify-center text-center space-y-2">
+                  <div className="flex items-center gap-1.5">
+                    <AlertTriangle className="w-4 h-4 text-rose-400" />
+                    <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-rose-500/20 text-rose-300">
+                      {p.detailed_error?.categoryLabel || 'Lỗi trang'}
+                    </span>
+                  </div>
+                  <h4 className="text-xs sm:text-sm font-semibold text-rose-100">
+                    {p.detailed_error?.title || `Lỗi xử lý trang ${p.page_number}`}
+                  </h4>
+                  <p className="text-zinc-400 text-xs max-w-xs">
+                    {p.detailed_error?.message || p.error_message || 'Không thể OCR hoặc dịch trang này.'}
+                  </p>
+                  <button
+                    onClick={() => onRetryPage(p.id)}
+                    className="mt-2 flex items-center gap-1.5 text-xs font-semibold py-1.5 px-3 bg-[#e06b3a] hover:bg-orange-600 text-white rounded-xl transition-colors shadow-md shadow-orange-950/40"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>Thử lại trang {p.page_number}</span>
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <img
+                    src={showOriginal ? p.source_image : (p.processed_image || p.source_image)}
+                    alt={`Trang ${p.page_number}`}
+                    className="w-full object-contain"
+                    referrerPolicy="no-referrer"
+                    loading="lazy"
+                  />
+                  {renderTypesettingOverlay(p)}
+                  <div className="absolute top-2 right-2 px-2 py-0.5 rounded bg-black/60 backdrop-blur-md text-[10px] text-zinc-300 font-mono">
+                    Trang {p.page_number}
+                  </div>
+                </>
+              )}
             </div>
           ))}
         </div>
@@ -446,33 +488,33 @@ export const MangaReader: React.FC<MangaReaderProps> = ({
 
       {/* Selected Speech Bubble Inspection & Live Edit Dialog */}
       {selectedBubble && (
-        <div className="bg-slate-900 border border-indigo-500/40 rounded-xl p-4 shadow-xl animate-fadeIn text-slate-200">
+        <div className="bg-[#18181c] border border-orange-500/40 rounded-2xl p-4 shadow-xl animate-fadeIn text-zinc-200">
           <div className="flex items-center justify-between mb-3">
-            <h4 className="text-xs font-bold text-indigo-400 flex items-center gap-1.5 uppercase tracking-wider">
+            <h4 className="text-xs font-bold text-[#e06b3a] flex items-center gap-1.5 uppercase tracking-wider">
               <Sparkles className="w-3.5 h-3.5" />
               Chi tiết & Hiệu chỉnh Lời Thoại
             </h4>
             <button
               onClick={() => setSelectedBubble(null)}
-              className="text-xs text-slate-400 hover:text-white px-1.5 py-0.5"
+              className="text-xs text-zinc-400 hover:text-white px-1.5 py-0.5"
             >
               Đóng ✕
             </button>
           </div>
           <div className="space-y-3 text-xs">
             <div>
-              <span className="text-slate-400 block mb-1 font-semibold">Văn bản gốc (OCR nhận diện):</span>
-              <p className="bg-slate-800/90 p-2 rounded-lg font-mono text-slate-200 border border-slate-700">
+              <span className="text-zinc-400 block mb-1 font-semibold">Văn bản gốc (OCR nhận diện):</span>
+              <p className="bg-[#141417] p-2.5 rounded-xl font-mono text-zinc-200 border border-zinc-800">
                 {selectedBubble.sourceText}
               </p>
             </div>
             <div>
               <div className="flex items-center justify-between mb-1">
-                <span className="text-slate-400 font-semibold">Bản dịch AI (Nhấp để chỉnh sửa):</span>
+                <span className="text-zinc-400 font-semibold">Bản dịch AI (Nhấp để chỉnh sửa):</span>
                 {!isEditing && (
                   <button
                     onClick={() => setIsEditing(true)}
-                    className="text-indigo-400 hover:text-indigo-300 font-medium flex items-center gap-1 text-[11px]"
+                    className="text-[#e06b3a] hover:text-orange-400 font-medium flex items-center gap-1 text-[11px]"
                   >
                     <Edit3 className="w-3 h-3" />
                     <span>Sửa bản dịch</span>
@@ -486,18 +528,18 @@ export const MangaReader: React.FC<MangaReaderProps> = ({
                     value={editingText}
                     onChange={(e) => setEditingText(e.target.value)}
                     rows={3}
-                    className="w-full p-2 bg-slate-800 border border-indigo-500 rounded-lg text-slate-100 text-xs focus:outline-none"
+                    className="w-full p-2.5 bg-[#141417] border border-orange-500 rounded-xl text-zinc-100 text-xs focus:outline-none"
                   />
                   <div className="flex justify-end gap-2">
                     <button
                       onClick={() => setIsEditing(false)}
-                      className="px-2.5 py-1 rounded bg-slate-800 text-slate-400 hover:text-white"
+                      className="px-2.5 py-1 rounded-lg bg-zinc-800 text-zinc-400 hover:text-white"
                     >
                       Hủy
                     </button>
                     <button
                       onClick={handleSaveDialogueEdit}
-                      className="px-3 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-white font-medium flex items-center gap-1"
+                      className="px-3 py-1 rounded-lg bg-[#e06b3a] hover:bg-orange-600 text-white font-medium flex items-center gap-1"
                     >
                       <Check className="w-3.5 h-3.5" />
                       <span>Lưu lại</span>
@@ -505,7 +547,7 @@ export const MangaReader: React.FC<MangaReaderProps> = ({
                   </div>
                 </div>
               ) : (
-                <p className="bg-indigo-950/40 border border-indigo-500/30 p-2 rounded-lg font-medium text-indigo-200">
+                <p className="bg-[#141417] border border-orange-500/30 p-2.5 rounded-xl font-medium text-orange-200">
                   {selectedBubble.translatedText}
                 </p>
               )}
