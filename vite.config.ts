@@ -1,13 +1,61 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
-import { defineConfig } from 'vite';
+import fs from 'fs';
+import { defineConfig, Plugin } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
+
+function autoVersionPlugin(): Plugin {
+  const buildTime = Date.now();
+  const versionInfo = {
+    version: '1.0.5',
+    buildTime,
+    description: 'Bản cập nhật v1.0.5 tự động đồng bộ.',
+  };
+
+  return {
+    name: 'auto-version-generator',
+    buildStart() {
+      try {
+        const publicDir = path.resolve(process.cwd(), 'public');
+        if (!fs.existsSync(publicDir)) {
+          fs.mkdirSync(publicDir, { recursive: true });
+        }
+        fs.writeFileSync(
+          path.join(publicDir, 'version.json'),
+          JSON.stringify(versionInfo, null, 2)
+        );
+      } catch (e) {
+        console.warn('Unable to write public/version.json:', e);
+      }
+    },
+    writeBundle() {
+      try {
+        const distDir = path.resolve(process.cwd(), 'dist');
+        if (fs.existsSync(distDir)) {
+          fs.writeFileSync(
+            path.join(distDir, 'version.json'),
+            JSON.stringify(versionInfo, null, 2)
+          );
+        }
+      } catch (e) {
+        console.warn('Unable to write dist/version.json:', e);
+      }
+    },
+  };
+}
+
+const currentBuildTime = Date.now();
 
 export default defineConfig(() => {
   return {
     base: './',
+    define: {
+      '__APP_BUILD_TIME__': JSON.stringify(currentBuildTime),
+      '__APP_VERSION__': JSON.stringify('1.0.5'),
+    },
     plugins: [
+      autoVersionPlugin(),
       react(),
       tailwindcss(),
       VitePWA({

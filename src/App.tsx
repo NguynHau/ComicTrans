@@ -132,17 +132,47 @@ export function App() {
   }, [activeTab]);
 
   useEffect(() => {
-    if (activeTab === 'update') {
-      const runCheckUpdate = async () => {
+    const runCheckUpdate = async (isManualTab = false) => {
+      if (isManualTab) {
         setCheckingUpdate(true);
         setUpdateResult(null);
-        const res = await checkForAppUpdate();
-        setUpdateResult(res);
+      }
+      const res = await checkForAppUpdate();
+      setUpdateResult(res);
+      if (isManualTab) {
         setCheckingUpdate(false);
-      };
-      runCheckUpdate();
+      }
+    };
+
+    if (activeTab === 'update') {
+      runCheckUpdate(true);
     }
   }, [activeTab]);
+
+  // Automatic background update check on initial mount, focus, and every 5 minutes
+  useEffect(() => {
+    const checkBg = async () => {
+      try {
+        const res = await checkForAppUpdate();
+        setUpdateResult(res);
+      } catch (e) {
+        // ignore background errors
+      }
+    };
+
+    checkBg();
+    const timer = setInterval(checkBg, 5 * 60 * 1000);
+
+    const handleFocus = () => {
+      checkBg();
+    };
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, []);
 
   // Keep a ref to track current active job for cancellation inside the loop
   const activeJobRef = useRef<MangaJob | null>(null);
@@ -905,6 +935,25 @@ export function App() {
           </div>
         )}
       </main>
+
+      {/* Floating Update Notification Toast */}
+      {updateResult?.hasUpdate && activeTab !== 'update' && (
+        <div className="fixed bottom-22 left-1/2 -translate-x-1/2 z-[140] w-[90%] max-w-md bg-gradient-to-r from-orange-600 via-amber-600 to-orange-600 text-white p-3 rounded-2xl shadow-xl shadow-orange-950/50 border border-orange-400/40 flex items-center justify-between gap-3 animate-bounce-subtle">
+          <div className="flex items-center gap-2.5 overflow-hidden">
+            <Sparkles className="w-5 h-5 text-amber-200 flex-shrink-0 animate-pulse" />
+            <div className="text-xs">
+              <p className="font-extrabold text-white">Đã có bản cập nhật v{updateResult.latestVersion}!</p>
+              <p className="text-[11px] text-orange-100/90 truncate">Nhấn để nâng cấp ngay phiên bản mới</p>
+            </div>
+          </div>
+          <button
+            onClick={() => applyAppUpdate()}
+            className="px-3 py-1.5 bg-white text-orange-700 font-bold rounded-xl text-xs hover:bg-orange-50 transition-all flex-shrink-0 shadow-sm"
+          >
+            Cập nhật
+          </button>
+        </div>
+      )}
 
       {/* Floating Liquid Glass Island Navigation */}
       <LiquidGlassIsland

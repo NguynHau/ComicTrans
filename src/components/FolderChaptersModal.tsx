@@ -1,6 +1,7 @@
-import React from 'react';
-import { X, Folder, BookOpen, Trash2 } from 'lucide-react';
+import React, { useState } from 'react';
+import { X, Folder, BookOpen, Trash2, ArrowUpDown } from 'lucide-react';
 import { RecentItem } from '../types';
+import { sortChapters } from '../lib/chapterSort';
 
 interface FolderChaptersModalProps {
   folderName: string;
@@ -17,6 +18,10 @@ export const FolderChaptersModal: React.FC<FolderChaptersModalProps> = ({
   onSelectChapter,
   onDeleteChapter,
 }) => {
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+
+  const sortedChapters = sortChapters(chapters, sortOrder);
+
   return (
     <div className="fixed inset-0 z-[180] bg-black/70 backdrop-blur-sm flex items-end justify-center animate-fadeIn">
       {/* Backdrop click to close */}
@@ -43,18 +48,30 @@ export const FolderChaptersModal: React.FC<FolderChaptersModalProps> = ({
               </div>
             </div>
 
-            <button
-              onClick={onClose}
-              className="p-1.5 rounded-xl text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors flex-shrink-0 border border-zinc-800"
-            >
-              <X className="w-5 h-5" />
-            </button>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              {/* Sort toggle button */}
+              <button
+                onClick={() => setSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'))}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#0d0d0f] hover:bg-zinc-800 border border-zinc-800 text-zinc-300 text-xs font-bold transition-all"
+                title="Thay đổi thứ tự sắp xếp chap"
+              >
+                <ArrowUpDown className="w-3.5 h-3.5 text-[#e06b3a]" />
+                <span>{sortOrder === 'asc' ? 'Chap 1 → N' : 'Chap N → 1'}</span>
+              </button>
+
+              <button
+                onClick={onClose}
+                className="p-1.5 rounded-xl text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors flex-shrink-0 border border-zinc-800"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
           </div>
         </div>
 
         {/* Chapters Scroll Area */}
         <div className="flex-1 overflow-y-auto p-4 space-y-2.5">
-          {chapters.length === 0 ? (
+          {sortedChapters.length === 0 ? (
             <div className="py-16 text-center space-y-2">
               <BookOpen className="w-8 h-8 text-zinc-600 mx-auto" />
               <p className="text-xs text-zinc-400 font-medium">
@@ -62,7 +79,7 @@ export const FolderChaptersModal: React.FC<FolderChaptersModalProps> = ({
               </p>
             </div>
           ) : (
-            chapters.map((item) => (
+            sortedChapters.map((item) => (
               <div
                 key={item.id}
                 onClick={() => onSelectChapter(item)}

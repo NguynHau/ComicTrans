@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, ChevronLeft, ChevronRight, BookOpen } from 'lucide-react';
 import { RecentItem } from '../types';
+import { sortChapters } from '../lib/chapterSort';
 
 interface SavedMangaViewerProps {
   item: RecentItem;
@@ -23,18 +24,22 @@ export const SavedMangaViewer: React.FC<SavedMangaViewerProps> = ({
 
   const pages = currentChapter.pages || [];
 
-  // Determine chapter order
-  // If allFolderItems is provided, sort or find index
-  const itemsInFolder = allFolderItems.length > 0 ? allFolderItems : [currentChapter];
+  // Sort folder items naturally from Chap 1 -> Chap N
+  const itemsInFolder = sortChapters(
+    allFolderItems.length > 0 ? allFolderItems : [currentChapter],
+    'asc'
+  );
+
   const currentIndex = itemsInFolder.findIndex((x) => x.id === currentChapter.id);
 
-  // Assuming itemsInFolder is ordered with newest first (or list order)
-  // Prev chapter (e.g., Chap 1 when currently reading Chap 2):
-  // If list is newest first [Chap 3, Chap 2, Chap 1]: currentIndex + 1 is Chap 1 (Prev), currentIndex - 1 is Chap 3 (Next).
-  // Let's check if index + 1 is older chapter (Chap trước) or index - 1.
-  // We provide intuitive navigation:
-  const prevChapter = currentIndex < itemsInFolder.length - 1 ? itemsInFolder[currentIndex + 1] : null; // Older / Previous
-  const nextChapter = currentIndex > 0 ? itemsInFolder[currentIndex - 1] : null; // Newer / Next
+  // In ascending list [Chap 1, Chap 2, Chap 3...]:
+  // Prev Chapter is index - 1 (e.g., Chap 1 when currently reading Chap 2)
+  // Next Chapter is index + 1 (e.g., Chap 3 when currently reading Chap 2)
+  const prevChapter = currentIndex > 0 ? itemsInFolder[currentIndex - 1] : null;
+  const nextChapter =
+    currentIndex >= 0 && currentIndex < itemsInFolder.length - 1
+      ? itemsInFolder[currentIndex + 1]
+      : null;
 
   const handleGoToPrev = () => {
     if (prevChapter) {
@@ -112,7 +117,7 @@ export const SavedMangaViewer: React.FC<SavedMangaViewerProps> = ({
           title={prevChapter ? `Đọc ${prevChapter.title}` : 'Không có chap trước'}
         >
           <ChevronLeft className="w-4 h-4 text-[#e06b3a]" />
-          <span>Chap trước</span>
+          <span>{prevChapter ? `Tập trước (${prevChapter.title})` : 'Chap trước'}</span>
         </button>
 
         {/* Nút Chap Sau */}
@@ -126,7 +131,7 @@ export const SavedMangaViewer: React.FC<SavedMangaViewerProps> = ({
           }`}
           title={nextChapter ? `Đọc ${nextChapter.title}` : 'Không có chap sau'}
         >
-          <span>Chap sau</span>
+          <span>{nextChapter ? `Tập sau (${nextChapter.title})` : 'Chap sau'}</span>
           <ChevronRight className="w-4 h-4 text-[#e06b3a]" />
         </button>
       </div>
