@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { X, Folder, Plus, BookmarkCheck } from 'lucide-react';
+import { X, Folder, Plus, BookmarkCheck, Loader2, AlertCircle } from 'lucide-react';
 import { MangaJob, MangaPage, MangaFolder, RecentItem } from '../types';
 import { suggestMangaAndChapter } from '../lib/mangaUtils';
+import { getFoldersFromStorage, saveFoldersToStorage, saveRecentItemToStorage } from '../lib/storage';
 
 interface SaveFolderModalProps {
   job: MangaJob;
@@ -21,47 +22,60 @@ export const SaveFolderModal: React.FC<SaveFolderModalProps> = ({
   const [isCreatingNew, setIsCreatingNew] = useState<boolean>(false);
   const [newFolderName, setNewFolderName] = useState<string>('');
   const [chapterName, setChapterName] = useState<string>('');
+  const [isSaving, setIsSaving] = useState<boolean>(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => {
-    try {
-      const storedFolders = localStorage.getItem('COMIC_TRANS_FOLDERS');
-      const parsedFolders: MangaFolder[] = storedFolders ? JSON.parse(storedFolders) : [];
-      setFolders(parsedFolders);
+    let isMounted = true;
+    async function init() {
+      try {
+        const parsedFolders = await getFoldersFromStorage();
+        if (!isMounted) return;
+        setFolders(parsedFolders);
 
-      const suggestions = suggestMangaAndChapter(job.source_url);
-      setNewFolderName(suggestions.mangaName);
-      setChapterName(suggestions.chapterName);
+        const suggestions = suggestMangaAndChapter(job.source_url);
+        setNewFolderName(suggestions.mangaName);
+        setChapterName(suggestions.chapterName);
 
-      // If folders exist, default to the first one or 'new'
-      if (parsedFolders.length > 0) {
-        // Check if any folder matches the suggested manga name
-        const match = parsedFolders.find(f => f.name.toLowerCase() === suggestions.mangaName.toLowerCase());
-        if (match) {
-          setSelectedFolderId(match.id);
+        if (parsedFolders.length > 0) {
+          const match = parsedFolders.find(
+            (f) => f.name.toLowerCase() === suggestions.mangaName.toLowerCase()
+          );
+          if (match) {
+            setSelectedFolderId(match.id);
+            setIsCreatingNew(false);
+          } else {
+            setSelectedFolderId(parsedFolders[0].id);
+            setIsCreatingNew(false);
+          }
         } else {
-          setSelectedFolderId(parsedFolders[0].id);
+          setIsCreatingNew(true);
         }
-      } else {
-        setIsCreatingNew(true);
+      } catch (e) {
+        if (isMounted) setIsCreatingNew(true);
       }
-    } catch (e) {
-      console.warn('Failed to load folders:', e);
-      setIsCreatingNew(true);
     }
+    init();
+    return () => {
+      isMounted = false;
+    };
   }, [job]);
 
-  const handleConfirmSave = (e: React.FormEvent) => {
+  const handleConfirmSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsSaving(true);
+    setSaveError(null);
+
     try {
       let targetFolderId = selectedFolderId;
       let targetFolderName = '';
-
       let currentFolders = [...folders];
 
       if (isCreatingNew || !targetFolderId) {
         const folderNameTrim = newFolderName.trim() || 'Bộ truyện mới';
-        // check if folder already exists
-        const existing = currentFolders.find(f => f.name.toLowerCase() === folderNameTrim.toLowerCase());
+        const existing = currentFolders.find(
+          (f) => f.name.toLowerCase() === folderNameTrim.toLowerCase()
+        );
         if (existing) {
           targetFolderId = existing.id;
           targetFolderName = existing.name;
@@ -74,10 +88,10 @@ export const SaveFolderModal: React.FC<SaveFolderModalProps> = ({
           currentFolders.unshift(newFolder);
           targetFolderId = newFolder.id;
           targetFolderName = newFolder.name;
-          localStorage.setItem('COMIC_TRANS_FOLDERS', JSON.stringify(currentFolders));
+          await saveFoldersToStorage(currentFolders);
         }
       } else {
-        const found = currentFolders.find(f => f.id === targetFolderId);
+        const found = currentFolders.find((f) => f.id === targetFolderId);
         targetFolderName = found ? found.name : 'Thư mục truyện';
       }
 
@@ -89,7 +103,7 @@ export const SaveFolderModal: React.FC<SaveFolderModalProps> = ({
         sourceUrl: job.source_url,
         thumbnail: pages[0]?.processed_image || pages[0]?.source_image,
         totalPages: pages.length,
-        completedPages: pages.filter(p => p.status === 'completed').length || pages.length,
+        completedPages: pages.filter((p) => p.status === 'completed').length || pages.length,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         job: {
           ...job,
@@ -98,15 +112,15 @@ export const SaveFolderModal: React.FC<SaveFolderModalProps> = ({
         pages: pages,
       };
 
-      const storedRecents = localStorage.getItem('COMIC_TRANS_RECENTS');
-      const list: RecentItem[] = storedRecents ? JSON.parse(storedRecents) : [];
-      const updatedList = [recentItem, ...list.filter(x => x.id !== job.job_id)];
-      localStorage.setItem('COMIC_TRANS_RECENTS', JSON.stringify(updatedList));
+      await saveRecentItemToStorage(recentItem);
 
       onSaveSuccess();
       onClose();
-    } catch (err) {
-      console.warn('Failed to save to folder:', err);
+    } catch (err: any) {
+      console.error('Failed to save to folder:', err);
+      setSaveError(err?.message || 'Có lỗi xảy ra khi lưu truyện. Vui lòng thử lại.');
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -121,7 +135,8 @@ export const SaveFolderModal: React.FC<SaveFolderModalProps> = ({
           </div>
           <button
             onClick={onClose}
-            className="p-1 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
+            disabled={isSaving}
+            className="p-1 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors disabled:opacity-50"
           >
             <X className="w-5 h-5" />
           </button>
@@ -129,6 +144,13 @@ export const SaveFolderModal: React.FC<SaveFolderModalProps> = ({
 
         {/* Body */}
         <form onSubmit={handleConfirmSave} className="p-5 space-y-4">
+          {saveError && (
+            <div className="p-3 rounded-xl bg-rose-950/30 border border-rose-500/30 flex items-start gap-2 text-xs text-rose-300">
+              <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0 mt-0.5" />
+              <span>{saveError}</span>
+            </div>
+          )}
+
           {/* Chapter Name Input */}
           <div className="space-y-1.5">
             <label className="text-xs font-bold text-zinc-300">
@@ -206,16 +228,27 @@ export const SaveFolderModal: React.FC<SaveFolderModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 rounded-xl text-xs font-bold text-zinc-400 hover:text-white bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 transition-colors"
+              disabled={isSaving}
+              className="px-4 py-2 rounded-xl text-xs font-bold text-zinc-400 hover:text-white bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 transition-colors disabled:opacity-50"
             >
               Hủy
             </button>
             <button
               type="submit"
-              className="px-5 py-2 rounded-xl text-xs font-bold text-white bg-[#e06b3a] hover:bg-[#ff7e40] shadow-lg shadow-orange-950/40 transition-all flex items-center gap-1.5"
+              disabled={isSaving}
+              className="px-5 py-2 rounded-xl text-xs font-bold text-white bg-[#e06b3a] hover:bg-[#ff7e40] shadow-lg shadow-orange-950/40 transition-all flex items-center gap-1.5 disabled:opacity-50"
             >
-              <BookmarkCheck className="w-4 h-4" />
-              <span>Xác nhận lưu</span>
+              {isSaving ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Đang lưu...</span>
+                </>
+              ) : (
+                <>
+                  <BookmarkCheck className="w-4 h-4" />
+                  <span>Xác nhận lưu</span>
+                </>
+              )}
             </button>
           </div>
         </form>
@@ -223,3 +256,4 @@ export const SaveFolderModal: React.FC<SaveFolderModalProps> = ({
     </div>
   );
 };
+

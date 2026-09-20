@@ -22,6 +22,13 @@ import {
 } from './lib/clientPipeline';
 import { classifyPipelineError, testGeminiApiKey } from './lib/errorUtils';
 import { checkForAppUpdate, applyAppUpdate, CURRENT_VERSION, CheckUpdateResult } from './lib/updateChecker';
+import {
+  getFoldersFromStorage,
+  getRecentItemsFromStorage,
+  saveFoldersToStorage,
+  saveRecentItemToStorage,
+  deleteRecentItemFromStorage,
+} from './lib/storage';
 
 export function App() {
   const [activeJob, setActiveJob] = useState<MangaJob | null>(null);
@@ -55,20 +62,26 @@ export function App() {
   }>({ status: 'idle' });
 
   useEffect(() => {
-    const loadRecents = () => {
+    let isMounted = true;
+    const loadData = async () => {
       try {
-        const stored = localStorage.getItem('COMIC_TRANS_RECENTS');
-        setRecents(stored ? JSON.parse(stored) : []);
-        const storedFolders = localStorage.getItem('COMIC_TRANS_FOLDERS');
-        setFolders(storedFolders ? JSON.parse(storedFolders) : []);
+        const storedRecents = await getRecentItemsFromStorage();
+        const storedFolders = await getFoldersFromStorage();
+        if (isMounted) {
+          setRecents(storedRecents);
+          setFolders(storedFolders);
+        }
       } catch (err) {
         console.warn('Failed to load recents/folders:', err);
       }
     };
-    loadRecents();
+    loadData();
+    return () => {
+      isMounted = false;
+    };
   }, [activeTab]);
 
-  const handleCreateFolder = (e: React.FormEvent) => {
+  const handleCreateFolder = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newFolderNameInput.trim()) return;
     try {
@@ -79,7 +92,7 @@ export function App() {
       };
       const updated = [newFolder, ...folders];
       setFolders(updated);
-      localStorage.setItem('COMIC_TRANS_FOLDERS', JSON.stringify(updated));
+      await saveFoldersToStorage(updated);
       setNewFolderNameInput('');
       setIsCreateFolderModalOpen(false);
     } catch (err) {
@@ -87,17 +100,21 @@ export function App() {
     }
   };
 
-  const handleDeleteFolder = (folderId: string, e: React.MouseEvent) => {
+  const handleDeleteFolder = async (folderId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (!confirm('Bạn có chắc chắn muốn xóa thư mục này? Các chương truyện trong thư mục sẽ chuyển về chưa phân loại.')) return;
     try {
       const updatedFolders = folders.filter(f => f.id !== folderId);
       setFolders(updatedFolders);
-      localStorage.setItem('COMIC_TRANS_FOLDERS', JSON.stringify(updatedFolders));
+      await saveFoldersToStorage(updatedFolders);
 
       const updatedRecents = recents.map(r => r.folderId === folderId ? { ...r, folderId: undefined, folderName: undefined } : r);
       setRecents(updatedRecents);
-      localStorage.setItem('COMIC_TRANS_RECENTS', JSON.stringify(updatedRecents));
+      for (const r of updatedRecents) {
+        if (r.folderId === undefined) {
+          saveRecentItemToStorage(r);
+        }
+      }
     } catch (err) {
       console.warn('Failed to delete folder:', err);
     }
@@ -440,11 +457,11 @@ export function App() {
     );
   };
 
-  const handleDeleteRecent = (id: string, e: React.MouseEvent) => {
+  const handleDeleteRecent = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     const updated = recents.filter(item => item.id !== id);
     setRecents(updated);
-    localStorage.setItem('COMIC_TRANS_RECENTS', JSON.stringify(updated));
+    await deleteRecentItemFromStorage(id);
   };
 
   const handleReset = () => {
