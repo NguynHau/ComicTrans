@@ -56,7 +56,13 @@ export const MangaReader: React.FC<MangaReaderProps> = ({
     setTimeout(() => setSavedSuccess(false), 2000);
   };
 
-  const isReadyToSave = pages.length > 0;
+  const isTranslationFinishedOrCancelled =
+    job.status === 'completed' ||
+    job.status === 'cancelled' ||
+    job.status === 'failed';
+
+  const canSave = pages.length > 0 && isTranslationFinishedOrCancelled;
+  const canReset = isTranslationFinishedOrCancelled;
 
   return (
     <div className="w-full max-w-2xl mx-auto flex flex-col space-y-3">
@@ -66,27 +72,32 @@ export const MangaReader: React.FC<MangaReaderProps> = ({
         <div className="flex items-center gap-2 w-full">
           <button
             onClick={handleSaveArchive}
-            disabled={!isReadyToSave}
+            disabled={!canSave}
             className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-md ${
-              !isReadyToSave
-                ? 'opacity-40 cursor-not-allowed bg-zinc-900 text-zinc-500 border border-zinc-800'
+              !canSave
+                ? 'opacity-40 cursor-not-allowed bg-zinc-900 text-zinc-600 border border-zinc-800/60 pointer-events-none'
                 : savedSuccess
-                ? 'bg-emerald-600 text-white'
-                : 'bg-[#141417] hover:bg-zinc-800 text-zinc-200 border border-zinc-700/80'
+                ? 'bg-emerald-600 text-white shadow-emerald-950/40'
+                : 'bg-[#141417] hover:bg-zinc-800 text-zinc-100 border border-zinc-700/80 hover:border-orange-500/50'
             }`}
-            title="Lưu bản dịch vào máy và hiển thị ở tab Truyện"
+            title={canSave ? "Lưu bản dịch vào máy và hiển thị ở tab Truyện" : "Chờ hoàn tất dịch hoặc hủy tiến trình để lưu"}
           >
-            <BookmarkCheck className={`w-4 h-4 flex-shrink-0 ${isReadyToSave ? 'text-orange-400' : 'text-zinc-600'}`} />
+            <BookmarkCheck className={`w-4 h-4 flex-shrink-0 ${canSave ? 'text-[#e06b3a]' : 'text-zinc-600'}`} />
             <span>{savedSuccess ? 'Đã lưu!' : 'Lưu trữ'}</span>
           </button>
 
           {onReset && (
             <button
               onClick={onReset}
-              className="flex-1 py-2.5 px-4 rounded-xl text-xs font-bold bg-[#141417] hover:bg-zinc-800 text-zinc-200 border border-zinc-700/80 transition-all flex items-center justify-center gap-1.5 shadow-md"
-              title="Dịch chương truyện mới"
+              disabled={!canReset}
+              className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-md ${
+                !canReset
+                  ? 'opacity-40 cursor-not-allowed bg-zinc-900 text-zinc-600 border border-zinc-800/60 pointer-events-none'
+                  : 'bg-[#141417] hover:bg-zinc-800 text-zinc-100 border border-zinc-700/80 hover:border-orange-500/50'
+              }`}
+              title={canReset ? "Dịch chương truyện mới" : "Chờ hoàn tất dịch hoặc hủy tiến trình để dịch chương mới"}
             >
-              <RefreshCw className="w-3.5 h-3.5 text-[#e06b3a]" />
+              <RefreshCw className={`w-3.5 h-3.5 ${canReset ? 'text-[#e06b3a]' : 'text-zinc-600'}`} />
               <span>Dịch chương mới</span>
             </button>
           )}

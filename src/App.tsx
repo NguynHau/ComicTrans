@@ -604,7 +604,7 @@ export function App() {
                 onClick={() => setIsCreateFolderModalOpen(true)}
                 className="flex items-center gap-1.5 px-3.5 py-2 bg-[#141417] hover:bg-zinc-800 border border-zinc-700/80 text-zinc-200 rounded-xl text-xs font-bold transition-all shadow-md"
               >
-                <FolderPlus className="w-4 h-4 text-[#e06b3a]" />
+                <Plus className="w-4 h-4 text-[#e06b3a]" />
                 <span>Tạo thư mục truyện</span>
               </button>
             </div>
@@ -947,7 +947,7 @@ export function App() {
           <div className="bg-[#141417] border border-zinc-800 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl flex flex-col">
             <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800">
               <div className="flex items-center gap-2">
-                <FolderPlus className="w-5 h-5 text-[#e06b3a]" />
+                <Plus className="w-5 h-5 text-[#e06b3a]" />
                 <h3 className="text-base font-bold text-zinc-100">Tạo Thư mục Truyện mới</h3>
               </div>
               <button
