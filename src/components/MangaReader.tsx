@@ -10,6 +10,7 @@ import {
   BookmarkCheck,
 } from 'lucide-react';
 import { MangaJob, MangaPage } from '../types';
+import { SaveFolderModal } from './SaveFolderModal';
 
 interface MangaReaderProps {
   job: MangaJob;
@@ -26,6 +27,7 @@ export const MangaReader: React.FC<MangaReaderProps> = ({
   const [currentPageIdx, setCurrentPageIdx] = useState(0);
   const [viewMode, setViewMode] = useState<'single' | 'scroll'>('single');
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const [isSaveModalOpen, setIsSaveModalOpen] = useState(false);
 
   const currentPage = pages[currentPageIdx] || pages[0];
 
@@ -43,33 +45,12 @@ export const MangaReader: React.FC<MangaReaderProps> = ({
 
   // Save to Library / Device Archive (appears in tab 2 "Truyện")
   const handleSaveArchive = () => {
-    try {
-      const recentItem = {
-        id: job.job_id,
-        title: job.source_url
-          ? (job.source_url.split('/').filter(Boolean).pop()?.replace(/[-_]/g, ' ') || 'Chương truyện')
-          : 'Tệp lưu trữ cá nhân',
-        sourceUrl: job.source_url,
-        thumbnail: pages[0]?.processed_image || pages[0]?.source_image,
-        totalPages: pages.length,
-        completedPages: pages.filter(p => p.status === 'completed').length || pages.length,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        job: {
-          ...job,
-          status: 'completed',
-        },
-        pages: pages,
-      };
-      const stored = localStorage.getItem('COMIC_TRANS_RECENTS');
-      const list = stored ? JSON.parse(stored) : [];
-      const updatedList = [recentItem, ...list.filter((x: any) => x.id !== job.job_id)].slice(0, 10);
-      localStorage.setItem('COMIC_TRANS_RECENTS', JSON.stringify(updatedList));
-      
-      setSavedSuccess(true);
-      setTimeout(() => setSavedSuccess(false), 2000);
-    } catch (e) {
-      console.warn('Failed to save archive:', e);
-    }
+    setIsSaveModalOpen(true);
+  };
+
+  const handleSaveSuccess = () => {
+    setSavedSuccess(true);
+    setTimeout(() => setSavedSuccess(false), 2000);
   };
 
   return (
@@ -261,6 +242,15 @@ export const MangaReader: React.FC<MangaReaderProps> = ({
           </div>
         )}
       </div>
+
+      {isSaveModalOpen && (
+        <SaveFolderModal
+          job={job}
+          pages={pages}
+          onClose={() => setIsSaveModalOpen(false)}
+          onSaveSuccess={handleSaveSuccess}
+        />
+      )}
     </div>
   );
 };

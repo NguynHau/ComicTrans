@@ -299,6 +299,8 @@ export async function ensureImageAsJpegBase64(imageUrl: string): Promise<string>
 
 // Available Gemini models ordered by priority with automatic fallback on quota/rate-limits
 const CANDIDATE_GEMINI_MODELS = [
+  'gemini-1.5-flash',
+  'gemini-2.0-flash',
   'gemini-3.6-flash',
   'gemini-3.1-flash-lite',
   'gemini-3.5-flash',

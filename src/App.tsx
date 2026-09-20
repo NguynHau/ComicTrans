@@ -9,10 +9,11 @@ import { SavedMangaViewer } from './components/SavedMangaViewer';
 import { ApiDocsModal } from './components/ApiDocsModal';
 import { SettingsModal } from './components/SettingsModal';
 import { UpdateModal } from './components/UpdateModal';
-import { MangaJob, MangaPage, RecentItem, DetailedError } from './types';
+import { MangaJob, MangaPage, RecentItem, MangaFolder, DetailedError } from './types';
 import { 
   RefreshCw, BookOpen, Key, Sparkles, ShieldCheck, 
-  CheckCircle2, AlertCircle, ArrowUpCircle, ExternalLink 
+  CheckCircle2, AlertCircle, ArrowUpCircle, ExternalLink,
+  Folder, Plus, FolderPlus
 } from 'lucide-react';
 import {
   extractComicImagesClient,
@@ -34,6 +35,9 @@ export function App() {
 
   const [activeTab, setActiveTab] = useState<'home' | 'manga' | 'update' | 'settings'>('home');
   const [recents, setRecents] = useState<RecentItem[]>([]);
+  const [folders, setFolders] = useState<MangaFolder[]>([]);
+  const [isCreateFolderModalOpen, setIsCreateFolderModalOpen] = useState(false);
+  const [newFolderNameInput, setNewFolderNameInput] = useState('');
   const [selectedSavedManga, setSelectedSavedManga] = useState<RecentItem | null>(null);
 
   // Update checking state
@@ -55,12 +59,49 @@ export function App() {
       try {
         const stored = localStorage.getItem('COMIC_TRANS_RECENTS');
         setRecents(stored ? JSON.parse(stored) : []);
+        const storedFolders = localStorage.getItem('COMIC_TRANS_FOLDERS');
+        setFolders(storedFolders ? JSON.parse(storedFolders) : []);
       } catch (err) {
-        console.warn('Failed to load recents:', err);
+        console.warn('Failed to load recents/folders:', err);
       }
     };
     loadRecents();
   }, [activeTab]);
+
+  const handleCreateFolder = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newFolderNameInput.trim()) return;
+    try {
+      const newFolder: MangaFolder = {
+        id: 'folder_' + Date.now(),
+        name: newFolderNameInput.trim(),
+        createdAt: new Date().toISOString(),
+      };
+      const updated = [newFolder, ...folders];
+      setFolders(updated);
+      localStorage.setItem('COMIC_TRANS_FOLDERS', JSON.stringify(updated));
+      setNewFolderNameInput('');
+      setIsCreateFolderModalOpen(false);
+    } catch (err) {
+      console.warn('Failed to create folder:', err);
+    }
+  };
+
+  const handleDeleteFolder = (folderId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!confirm('Bạn có chắc chắn muốn xóa thư mục này? Các chương truyện trong thư mục sẽ chuyển về chưa phân loại.')) return;
+    try {
+      const updatedFolders = folders.filter(f => f.id !== folderId);
+      setFolders(updatedFolders);
+      localStorage.setItem('COMIC_TRANS_FOLDERS', JSON.stringify(updatedFolders));
+
+      const updatedRecents = recents.map(r => r.folderId === folderId ? { ...r, folderId: undefined, folderName: undefined } : r);
+      setRecents(updatedRecents);
+      localStorage.setItem('COMIC_TRANS_RECENTS', JSON.stringify(updatedRecents));
+    } catch (err) {
+      console.warn('Failed to delete folder:', err);
+    }
+  };
 
   useEffect(() => {
     if (activeTab === 'settings') {
@@ -542,17 +583,26 @@ export function App() {
         {/* Render Tab 2: manga (Saved Manga Library) */}
         {activeTab === 'manga' && (
           <div className="w-full space-y-4 animate-fadeIn">
-            <div className="space-y-1">
-              <h2 className="text-xl font-extrabold text-zinc-100 tracking-tight flex items-center gap-2">
-                <BookOpen className="w-5 h-5 text-[#e06b3a]" />
-                <span>Truyện đã lưu</span>
-              </h2>
-              <p className="text-xs text-zinc-400">
-                Các chương truyện bạn đã dịch cục bộ trên trình duyệt.
-              </p>
+            <div className="flex items-center justify-between">
+              <div className="space-y-1">
+                <h2 className="text-xl font-extrabold text-zinc-100 tracking-tight flex items-center gap-2">
+                  <BookOpen className="w-5 h-5 text-[#e06b3a]" />
+                  <span>Truyện đã lưu</span>
+                </h2>
+                <p className="text-xs text-zinc-400">
+                  Các chương truyện và thư mục truyện bạn đã lưu trên trình duyệt.
+                </p>
+              </div>
+              <button
+                onClick={() => setIsCreateFolderModalOpen(true)}
+                className="flex items-center gap-1.5 px-3.5 py-2 bg-[#141417] hover:bg-zinc-800 border border-zinc-700/80 text-zinc-200 rounded-xl text-xs font-bold transition-all shadow-md"
+              >
+                <FolderPlus className="w-4 h-4 text-[#e06b3a]" />
+                <span>Tạo thư mục truyện</span>
+              </button>
             </div>
 
-            {recents.length === 0 ? (
+            {recents.length === 0 && folders.length === 0 ? (
               <div className="py-12 px-6 text-center space-y-4 bg-[#141417]/40 rounded-2xl border border-zinc-800/60 flex flex-col items-center justify-center">
                 <div className="p-4 bg-[#1c1c22] rounded-full text-zinc-600 border border-zinc-800">
                   <BookOpen className="w-8 h-8" />
@@ -571,57 +621,140 @@ export function App() {
                 </button>
               </div>
             ) : (
-              <div className="space-y-3 max-h-[65vh] overflow-y-auto pr-1">
-                {recents.map((item) => (
-                  <div
-                    key={item.id}
-                    onClick={() => setSelectedSavedManga(item)}
-                    className="group relative flex gap-3 p-3 bg-[#141417] hover:bg-[#1c1c22] border border-zinc-800 hover:border-zinc-700/80 rounded-xl transition-all cursor-pointer shadow-md"
-                  >
-                    {/* Thumbnail */}
-                    <div className="w-14 h-18 bg-zinc-900 rounded-lg overflow-hidden flex-shrink-0 border border-zinc-800">
-                      {item.thumbnail ? (
-                        <img
-                          src={item.thumbnail}
-                          alt={item.title}
-                          referrerPolicy="no-referrer"
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                        />
+              <div className="space-y-4 max-h-[65vh] overflow-y-auto pr-1">
+                {/* Folders List */}
+                {folders.map((folder) => {
+                  const folderChapters = recents.filter(r => r.folderId === folder.id);
+                  return (
+                    <div key={folder.id} className="bg-[#141417]/80 border border-zinc-800 rounded-2xl p-4 space-y-3 shadow-lg">
+                      <div className="flex items-center justify-between border-b border-zinc-800/80 pb-2.5">
+                        <div className="flex items-center gap-2">
+                          <Folder className="w-4 h-4 text-[#e06b3a]" />
+                          <h3 className="text-sm font-extrabold text-zinc-100">{folder.name}</h3>
+                          <span className="text-[10px] bg-zinc-800 text-zinc-400 px-2 py-0.5 rounded-full font-medium">
+                            {folderChapters.length} chương
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={(e) => handleDeleteFolder(folder.id, e)}
+                          className="text-zinc-500 hover:text-rose-400 p-1 rounded-lg transition-colors"
+                          title="Xóa thư mục"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        </button>
+                      </div>
+
+                      {folderChapters.length === 0 ? (
+                        <p className="text-xs text-zinc-500 italic py-2 text-center">
+                          Chưa có chương nào trong thư mục này. Bấm "Lưu trữ" khi dịch để thêm vào đây.
+                        </p>
                       ) : (
-                        <div className="w-full h-full flex items-center justify-center text-zinc-600">
-                          <BookOpen className="w-6 h-6" />
+                        <div className="space-y-2">
+                          {folderChapters.map((item) => (
+                            <div
+                              key={item.id}
+                              onClick={() => setSelectedSavedManga(item)}
+                              className="group relative flex gap-3 p-3 bg-[#0d0d0f] hover:bg-[#1c1c22] border border-zinc-800/80 hover:border-zinc-700/80 rounded-xl transition-all cursor-pointer shadow-md"
+                            >
+                              <div className="w-12 h-16 bg-zinc-900 rounded-lg overflow-hidden flex-shrink-0 border border-zinc-800">
+                                {item.thumbnail ? (
+                                  <img
+                                    src={item.thumbnail}
+                                    alt={item.title}
+                                    referrerPolicy="no-referrer"
+                                    className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                                  />
+                                ) : (
+                                  <div className="w-full h-full flex items-center justify-center text-zinc-600">
+                                    <BookOpen className="w-5 h-5" />
+                                  </div>
+                                )}
+                              </div>
+                              <div className="flex-1 min-w-0 flex flex-col justify-between py-0.5">
+                                <div className="space-y-0.5">
+                                  <h4 className="text-xs font-bold text-zinc-200 truncate group-hover:text-[#e06b3a] transition-colors pr-6">
+                                    {item.title}
+                                  </h4>
+                                  <p className="text-[10px] text-zinc-400">
+                                    Đã dịch: <span className="text-emerald-400 font-medium">{item.completedPages}/{item.totalPages} trang</span>
+                                  </p>
+                                </div>
+                                <p className="text-[10px] text-zinc-500 font-medium">{item.timestamp}</p>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={(e) => handleDeleteRecent(item.id, e)}
+                                className="absolute top-2.5 right-2.5 p-1.5 rounded-lg text-zinc-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
+                                title="Xóa chương này"
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                </svg>
+                              </button>
+                            </div>
+                          ))}
                         </div>
                       )}
                     </div>
+                  );
+                })}
 
-                    {/* Info */}
-                    <div className="flex-1 min-w-0 flex flex-col justify-between py-0.5">
-                      <div className="space-y-1">
-                        <h4 className="text-sm font-bold text-zinc-200 truncate group-hover:text-[#e06b3a] transition-colors leading-snug pr-6">
-                          {item.title}
-                        </h4>
-                        <p className="text-[11px] text-zinc-400">
-                          Trạng thái: <span className="text-emerald-400 font-medium">Đã dịch {item.completedPages}/{item.totalPages} trang</span>
-                        </p>
-                      </div>
-                      <p className="text-[10px] text-zinc-500 font-medium">
-                        {item.timestamp}
-                      </p>
+                {/* Uncategorized chapters */}
+                {recents.filter(r => !r.folderId || !folders.some(f => f.id === r.folderId)).length > 0 && (
+                  <div className="bg-[#141417]/80 border border-zinc-800 rounded-2xl p-4 space-y-3 shadow-lg">
+                    <div className="border-b border-zinc-800/80 pb-2.5">
+                      <h3 className="text-sm font-extrabold text-zinc-300">Chương chưa phân loại</h3>
                     </div>
-
-                    {/* Delete Button */}
-                    <button
-                      type="button"
-                      onClick={(e) => handleDeleteRecent(item.id, e)}
-                      className="absolute top-3 right-3 p-1.5 rounded-lg text-zinc-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
-                      title="Xóa khỏi lịch sử"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                      </svg>
-                    </button>
+                    <div className="space-y-2">
+                      {recents.filter(r => !r.folderId || !folders.some(f => f.id === r.folderId)).map((item) => (
+                        <div
+                          key={item.id}
+                          onClick={() => setSelectedSavedManga(item)}
+                          className="group relative flex gap-3 p-3 bg-[#0d0d0f] hover:bg-[#1c1c22] border border-zinc-800/80 hover:border-zinc-700/80 rounded-xl transition-all cursor-pointer shadow-md"
+                        >
+                          <div className="w-12 h-16 bg-zinc-900 rounded-lg overflow-hidden flex-shrink-0 border border-zinc-800">
+                            {item.thumbnail ? (
+                              <img
+                                src={item.thumbnail}
+                                alt={item.title}
+                                referrerPolicy="no-referrer"
+                                className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                              />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center text-zinc-600">
+                                <BookOpen className="w-5 h-5" />
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0 flex flex-col justify-between py-0.5">
+                            <div className="space-y-0.5">
+                              <h4 className="text-xs font-bold text-zinc-200 truncate group-hover:text-[#e06b3a] transition-colors pr-6">
+                                {item.title}
+                              </h4>
+                              <p className="text-[10px] text-zinc-400">
+                                Đã dịch: <span className="text-emerald-400 font-medium">{item.completedPages}/{item.totalPages} trang</span>
+                              </p>
+                            </div>
+                            <p className="text-[10px] text-zinc-500 font-medium">{item.timestamp}</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={(e) => handleDeleteRecent(item.id, e)}
+                            className="absolute top-2.5 right-2.5 p-1.5 rounded-lg text-zinc-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
+                            title="Xóa chương này"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          </button>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                ))}
+                )}
               </div>
             )}
           </div>
@@ -840,6 +973,55 @@ export function App() {
           item={selectedSavedManga}
           onClose={() => setSelectedSavedManga(null)}
         />
+      )}
+
+      {/* Create Folder Modal */}
+      {isCreateFolderModalOpen && (
+        <div className="fixed inset-0 z-[250] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-[#141417] border border-zinc-800 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl flex flex-col">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800">
+              <div className="flex items-center gap-2">
+                <FolderPlus className="w-5 h-5 text-[#e06b3a]" />
+                <h3 className="text-base font-bold text-zinc-100">Tạo Thư mục Truyện mới</h3>
+              </div>
+              <button
+                onClick={() => setIsCreateFolderModalOpen(false)}
+                className="p-1 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+            <form onSubmit={handleCreateFolder} className="p-5 space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-zinc-300">Tên bộ truyện / Thư mục</label>
+                <input
+                  type="text"
+                  value={newFolderNameInput}
+                  onChange={(e) => setNewFolderNameInput(e.target.value)}
+                  placeholder="VD: One Piece, Solo Leveling..."
+                  className="w-full bg-[#0d0d0f] border border-zinc-800 rounded-xl px-3.5 py-2.5 text-xs font-medium text-zinc-200 focus:outline-none focus:ring-1 focus:ring-orange-500"
+                  required
+                />
+              </div>
+              <div className="pt-2 flex items-center justify-end gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setIsCreateFolderModalOpen(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-zinc-400 hover:text-white bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 transition-colors"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl text-xs font-bold text-white bg-[#e06b3a] hover:bg-[#ff7e40] shadow-lg shadow-orange-950/40 transition-all flex items-center gap-1.5"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Tạo thư mục</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -67,9 +67,17 @@ export interface LanguageOption {
   flag: string;
 }
 
+export interface MangaFolder {
+  id: string;
+  name: string;
+  createdAt: string;
+}
+
 export interface RecentItem {
   id: string;
   title: string;
+  folderId?: string;
+  folderName?: string;
   sourceUrl?: string;
   thumbnail?: string;
   totalPages: number;
