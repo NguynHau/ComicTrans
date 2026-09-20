@@ -77,14 +77,15 @@ export async function extractComicImagesClient(url: string): Promise<{ title: st
 
   // Try fetching HTML via multiple CORS proxies in order
   const proxyEndpoints = [
-    `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`,
     `https://corsproxy.io/?url=${encodeURIComponent(targetUrl)}`,
+    `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`,
     `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(targetUrl)}`,
+    `https://thingproxy.freeboard.io/fetch/${targetUrl}`,
   ];
 
   for (const proxyUrl of proxyEndpoints) {
     try {
-      const res = await fetch(proxyUrl, { signal: AbortSignal.timeout(8000) });
+      const res = await fetch(proxyUrl, { signal: AbortSignal.timeout(12000) });
       if (!res.ok) continue;
 
       if (proxyUrl.includes('allorigins.win/get')) {
