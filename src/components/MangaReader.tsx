@@ -2,16 +2,13 @@ import React, { useState } from 'react';
 import {
   ChevronLeft,
   ChevronRight,
-  Eye,
-  EyeOff,
   RotateCcw,
-  Archive,
   AlertTriangle,
   Lightbulb,
   Maximize2,
   Scroll,
+  BookmarkCheck,
 } from 'lucide-react';
-import JSZip from 'jszip';
 import { MangaJob, MangaPage } from '../types';
 
 interface MangaReaderProps {
@@ -27,9 +24,8 @@ export const MangaReader: React.FC<MangaReaderProps> = ({
   onRetryPage,
 }) => {
   const [currentPageIdx, setCurrentPageIdx] = useState(0);
-  const [showOriginal, setShowOriginal] = useState(false);
-  const [isZipping, setIsZipping] = useState(false);
   const [viewMode, setViewMode] = useState<'single' | 'scroll'>('single');
+  const [savedSuccess, setSavedSuccess] = useState(false);
 
   const currentPage = pages[currentPageIdx] || pages[0];
 
@@ -45,125 +41,74 @@ export const MangaReader: React.FC<MangaReaderProps> = ({
     }
   };
 
-  // Download all pages as a ZIP file
-  const handleDownloadZip = async () => {
-    if (pages.length === 0 || isZipping) return;
-    setIsZipping(true);
-
+  // Save to Library / Device Archive (appears in tab 2 "Truyện")
+  const handleSaveArchive = () => {
     try {
-      const zip = new JSZip();
-      const folder = zip.folder(`manga_translated_${job.job_id}`) || zip;
-
-      for (let i = 0; i < pages.length; i++) {
-        const p = pages[i];
-        const imgUrl = p.processed_image || p.source_image;
-        try {
-          const res = await fetch(imgUrl);
-          const blob = await res.blob();
-          const ext = blob.type.includes('png') ? 'png' : 'jpg';
-          folder.file(`page_${String(p.page_number).padStart(3, '0')}.${ext}`, blob);
-        } catch (e) {
-          console.warn(`Failed to fetch image for page ${p.page_number}`, e);
-        }
-      }
-
-      const content = await zip.generateAsync({ type: 'blob' });
-      const downloadUrl = URL.createObjectURL(content);
-      const a = document.createElement('a');
-      a.href = downloadUrl;
-      a.download = `chapter_translated_${job.job_id}.zip`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(downloadUrl);
+      const recentItem = {
+        id: job.job_id,
+        title: job.source_url
+          ? (job.source_url.split('/').filter(Boolean).pop()?.replace(/[-_]/g, ' ') || 'Chương truyện')
+          : 'Tệp lưu trữ cá nhân',
+        sourceUrl: job.source_url,
+        thumbnail: pages[0]?.processed_image || pages[0]?.source_image,
+        totalPages: pages.length,
+        completedPages: pages.filter(p => p.status === 'completed').length || pages.length,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        job: {
+          ...job,
+          status: 'completed',
+        },
+        pages: pages,
+      };
+      const stored = localStorage.getItem('COMIC_TRANS_RECENTS');
+      const list = stored ? JSON.parse(stored) : [];
+      const updatedList = [recentItem, ...list.filter((x: any) => x.id !== job.job_id)].slice(0, 10);
+      localStorage.setItem('COMIC_TRANS_RECENTS', JSON.stringify(updatedList));
+      
+      setSavedSuccess(true);
+      setTimeout(() => setSavedSuccess(false), 2000);
     } catch (e) {
-      console.error('ZIP packaging error:', e);
-    } finally {
-      setIsZipping(false);
+      console.warn('Failed to save archive:', e);
     }
-  };
-
-  // Render typeset overlays for fallback if canvas image is not generated yet
-  const renderTypesettingOverlay = (page: MangaPage) => {
-    if (showOriginal || !page.ocr_results || page.ocr_results.length === 0 || page.processed_image) {
-      return null;
-    }
-
-    return (
-      <div className="absolute inset-0 pointer-events-none">
-        {page.ocr_results.map((item, idx) => {
-          const trans = page.translations?.[idx]?.translated_text || item.text;
-          const bbox = item.bbox;
-
-          let leftPercent: string;
-          let topPercent: string;
-          let widthPercent: string;
-          let minHeightPercent: string;
-
-          if (
-            bbox.ymin !== undefined &&
-            bbox.xmin !== undefined &&
-            bbox.ymax !== undefined &&
-            bbox.xmax !== undefined
-          ) {
-            leftPercent = `${(bbox.xmin / 1000) * 100}%`;
-            topPercent = `${(bbox.ymin / 1000) * 100}%`;
-            widthPercent = `${((bbox.xmax - bbox.xmin) / 1000) * 100}%`;
-            minHeightPercent = `${((bbox.ymax - bbox.ymin) / 1000) * 100}%`;
-          } else {
-            leftPercent = `${(bbox.x / 800) * 100}%`;
-            topPercent = `${(bbox.y / 1100) * 100}%`;
-            widthPercent = `${(bbox.width / 800) * 100}%`;
-            minHeightPercent = `${(bbox.height / 1100) * 100}%`;
-          }
-
-          return (
-            <div
-              key={item.id || idx}
-              style={{
-                left: leftPercent,
-                top: topPercent,
-                width: widthPercent,
-                minHeight: minHeightPercent,
-                backgroundColor: `rgba(255, 255, 255, 0.95)`,
-              }}
-              className="absolute text-slate-900 border border-slate-300 shadow-sm rounded-xl p-1.5 flex items-center justify-center text-center"
-            >
-              <span className="font-bold font-sans text-xs leading-tight text-slate-950 break-words line-clamp-5 tracking-tight">
-                {trans}
-              </span>
-            </div>
-          );
-        })}
-      </div>
-    );
   };
 
   return (
     <div className="w-full max-w-2xl mx-auto flex flex-col space-y-3">
-      {/* View Mode Toggle Container (Xem từng ảnh / Cuộn như trên web) */}
-      <div className="flex items-center justify-center bg-[#141417] border border-zinc-800 rounded-xl p-1 gap-1">
+      {/* View Mode & Archive Toggle Container (Từng ảnh / Cuộn / Lưu trữ) */}
+      <div className="flex items-center justify-between bg-[#141417] border border-zinc-800 rounded-xl p-1 gap-1">
         <button
           onClick={() => setViewMode('single')}
-          className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+          className={`flex-1 py-2 px-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1 ${
             viewMode === 'single'
               ? 'bg-[#e06b3a] text-white shadow-md shadow-orange-950/40'
               : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60'
           }`}
         >
-          <Maximize2 className="w-3.5 h-3.5" />
-          <span>Xem từng ảnh</span>
+          <Maximize2 className="w-3.5 h-3.5 flex-shrink-0" />
+          <span>Từng ảnh</span>
         </button>
         <button
           onClick={() => setViewMode('scroll')}
-          className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+          className={`flex-1 py-2 px-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1 ${
             viewMode === 'scroll'
               ? 'bg-[#e06b3a] text-white shadow-md shadow-orange-950/40'
               : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60'
           }`}
         >
-          <Scroll className="w-3.5 h-3.5" />
-          <span>Cuộn như trên web</span>
+          <Scroll className="w-3.5 h-3.5 flex-shrink-0" />
+          <span>Cuộn</span>
+        </button>
+        <button
+          onClick={handleSaveArchive}
+          className={`flex-1 py-2 px-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1 ${
+            savedSuccess
+              ? 'bg-emerald-600 text-white'
+              : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700/80'
+          }`}
+          title="Lưu bản dịch vào máy và hiển thị ở tab Truyện"
+        >
+          <BookmarkCheck className="w-3.5 h-3.5 flex-shrink-0 text-orange-400" />
+          <span>{savedSuccess ? 'Đã lưu!' : 'Lưu trữ'}</span>
         </button>
       </div>
 
@@ -175,14 +120,11 @@ export const MangaReader: React.FC<MangaReaderProps> = ({
             {currentPage ? (
               <div className="relative w-full flex justify-center">
                 <img
-                  src={showOriginal ? currentPage.source_image : (currentPage.processed_image || currentPage.source_image)}
+                  src={currentPage.processed_image || currentPage.source_image}
                   alt={`Trang ${currentPage.page_number}`}
                   className="w-full h-auto object-contain select-none"
                   referrerPolicy="no-referrer"
                 />
-
-                {/* Overlaid Typesetting if fallback */}
-                {renderTypesettingOverlay(currentPage)}
 
                 {/* Failed page indicator */}
                 {currentPage.status === 'failed' && (
@@ -249,7 +191,7 @@ export const MangaReader: React.FC<MangaReaderProps> = ({
             {pages.map((p, idx) => (
               <div key={p.id || idx} className="relative w-full flex justify-center border-b border-zinc-900 last:border-b-0">
                 <img
-                  src={showOriginal ? p.source_image : (p.processed_image || p.source_image)}
+                  src={p.processed_image || p.source_image}
                   alt={`Trang ${p.page_number}`}
                   className="w-full h-auto object-contain select-none"
                   referrerPolicy="no-referrer"
@@ -260,7 +202,7 @@ export const MangaReader: React.FC<MangaReaderProps> = ({
         )}
 
         {/* Integrated Bottom Controls Bar */}
-        <div className="w-full bg-[#141417] border-t border-zinc-800/80 p-3 flex flex-wrap items-center justify-between gap-2 text-zinc-300">
+        <div className="w-full bg-[#141417] border-t border-zinc-800/80 p-3 flex items-center justify-between gap-3 text-zinc-300">
           <button
             onClick={handlePrevPage}
             disabled={currentPageIdx === 0 || viewMode === 'scroll'}
@@ -270,12 +212,12 @@ export const MangaReader: React.FC<MangaReaderProps> = ({
             <span>Trước</span>
           </button>
 
-          {/* Page selector dropdown & View options */}
-          <div className="flex items-center gap-2">
+          {/* Page selector dropdown */}
+          <div className="flex items-center">
             <select
               value={currentPageIdx}
               onChange={(e) => setCurrentPageIdx(Number(e.target.value))}
-              className="bg-zinc-800 border border-zinc-700/80 rounded-xl px-2.5 py-1.5 text-xs font-medium text-zinc-200 focus:outline-none focus:ring-1 focus:ring-orange-500"
+              className="bg-zinc-800 border border-zinc-700/80 rounded-xl px-3 py-1.5 text-xs font-medium text-zinc-200 focus:outline-none focus:ring-1 focus:ring-orange-500"
             >
               {pages.map((p, idx) => (
                 <option key={p.id} value={idx}>
@@ -283,28 +225,6 @@ export const MangaReader: React.FC<MangaReaderProps> = ({
                 </option>
               ))}
             </select>
-
-            <button
-              onClick={() => setShowOriginal(!showOriginal)}
-              className={`flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-xl border transition-all ${
-                showOriginal
-                  ? 'bg-amber-500/20 border-amber-500/40 text-amber-300'
-                  : 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
-              }`}
-            >
-              {showOriginal ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-              <span className="hidden sm:inline">{showOriginal ? 'Gốc' : 'Dịch'}</span>
-            </button>
-
-            <button
-              onClick={handleDownloadZip}
-              disabled={isZipping || pages.length === 0}
-              className="flex items-center gap-1 text-xs font-medium px-2.5 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-xl border border-zinc-700 transition-colors disabled:opacity-50"
-              title="Tải toàn bộ chapter dạng file ZIP"
-            >
-              <Archive className="w-3.5 h-3.5 text-[#e06b3a]" />
-              <span className="hidden sm:inline">{isZipping ? 'Đang nén...' : 'ZIP'}</span>
-            </button>
           </div>
 
           <button
