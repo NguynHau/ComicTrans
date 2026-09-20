@@ -60,21 +60,23 @@ export const LiquidGlassIsland: React.FC<LiquidGlassIslandProps> = ({
   const pointerStartRef = useRef(0);
   const xStartRef = useRef(0);
 
-  // Helper to calculate dynamic bounds based on current container width
+  // Helper to calculate dynamic bounds based on current container width and padding (px-1.5 = 6px)
   const getBounds = () => {
-    if (!containerRef.current) return { min: 0, max: 280, itemWidth: 70 };
+    if (!containerRef.current) return { min: 0, max: 280, itemWidth: 70, paddingLeft: 6 };
     const containerWidth = containerRef.current.offsetWidth || 350;
-    const itemWidth = containerWidth / TABS.length;
-    const min = itemWidth / 2 - 35.5;
-    const max = (TABS.length - 1) * itemWidth + itemWidth / 2 - 35.5;
-    return { min, max, itemWidth };
+    const paddingLeft = 6; // px-1.5 = 6px
+    const innerWidth = containerWidth - (paddingLeft * 2);
+    const itemWidth = innerWidth / TABS.length;
+    const min = paddingLeft + itemWidth / 2 - 35.5;
+    const max = paddingLeft + (TABS.length - 1) * itemWidth + itemWidth / 2 - 35.5;
+    return { min, max, itemWidth, paddingLeft };
   };
 
   // Calculate and update position based on active tab index
   const updatePosition = (idx: number) => {
     if (isDragging.current) return; // Do not interrupt during manual drag
-    const { min, itemWidth } = getBounds();
-    const targetX = idx * itemWidth + itemWidth / 2 - 35.5;
+    const { paddingLeft, itemWidth } = getBounds();
+    const targetX = paddingLeft + idx * itemWidth + itemWidth / 2 - 35.5;
     blobTargetX.set(targetX);
   };
 
@@ -110,24 +112,31 @@ export const LiquidGlassIsland: React.FC<LiquidGlassIslandProps> = ({
     const rect = containerRef.current.getBoundingClientRect();
     const paddingLeft = 6; // px-1.5 = 6px
     const localX = e.clientX - rect.left - paddingLeft;
-    const targetX = localX - 35.5; // 35.5 is half of droplet width (71)
+    const innerWidth = rect.width - (paddingLeft * 2);
+    const itemWidth = innerWidth / TABS.length;
 
-    const { min, max } = getBounds();
-    let constrainedX = Math.max(min, Math.min(max, targetX));
+    const clickedIdx = Math.max(0, Math.min(TABS.length - 1, Math.floor(localX / itemWidth)));
+    onChangeTab(TABS[clickedIdx].id);
+
+    const targetX = paddingLeft + clickedIdx * itemWidth + itemWidth / 2 - 35.5;
 
     isDragging.current = true;
     pointerStartRef.current = e.clientX;
-    xStartRef.current = constrainedX;
+    xStartRef.current = targetX;
 
-    blobTargetX.set(constrainedX);
-    animatedX.set(constrainedX);
+    blobTargetX.set(targetX);
+    animatedX.set(targetX);
 
     // SWELL scales when grabbed
     pressTargetScaleX.set(1.35);
     pressTargetScaleY.set(1.4);
 
     if (e.currentTarget) {
-      e.currentTarget.setPointerCapture(e.pointerId);
+      try {
+        e.currentTarget.setPointerCapture(e.pointerId);
+      } catch (err) {
+        // ignore if capture lost
+      }
     }
   };
 
