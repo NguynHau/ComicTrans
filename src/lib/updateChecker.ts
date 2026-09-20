@@ -77,8 +77,14 @@ export async function applyAppUpdate(): Promise<void> {
         await reg.unregister();
       }
     }
+    if ('caches' in window) {
+      const cacheNames = await caches.keys();
+      for (const name of cacheNames) {
+        await caches.delete(name);
+      }
+    }
   } catch (e) {
-    console.warn('Failed unregistering SW:', e);
+    console.warn('Failed cleaning caches/SW:', e);
   }
 
   // Force cache refresh reload
