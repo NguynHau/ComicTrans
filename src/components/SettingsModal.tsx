@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Key, ShieldCheck, HelpCircle, CheckCircle2, AlertTriangle, RefreshCw, ExternalLink, Sparkles } from 'lucide-react';
+import { X, Key, ShieldCheck, HelpCircle, CheckCircle2, AlertTriangle, RefreshCw, ExternalLink, Sparkles, Eye, EyeOff } from 'lucide-react';
 import { testGeminiApiKey } from '../lib/errorUtils';
 import { CURRENT_VERSION } from '../lib/updateChecker';
 
@@ -11,6 +11,7 @@ interface SettingsModalProps {
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, onOpenUpdateModal }) => {
   const [apiKey, setApiKey] = useState('');
+  const [showKey, setShowKey] = useState(false);
   const [saved, setSaved] = useState(false);
   const [testState, setTestState] = useState<{
     status: 'idle' | 'testing' | 'success' | 'error';
@@ -23,6 +24,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, o
       const storedKey = localStorage.getItem('GEMINI_API_KEY') || '';
       setApiKey(storedKey);
       setSaved(false);
+      setShowKey(false);
       setTestState({ status: 'idle' });
     }
   }, [isOpen]);
@@ -122,16 +124,26 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, o
                 <span className="text-[10px] text-emerald-400 font-medium">Đang dùng key mặc định</span>
               )}
             </div>
-            <input
-              type="password"
-              value={apiKey}
-              onChange={(e) => {
-                setApiKey(e.target.value);
-                setTestState({ status: 'idle' });
-              }}
-              placeholder={hasEnvKey ? "•••••••••••••••••••••••• (Đã có key build sẵn)" : "Dán mã AI Studio API Key (AIzaSy...)"}
-              className="w-full px-3.5 py-2.5 bg-[#18181c] border border-zinc-700/80 rounded-xl text-zinc-100 placeholder-zinc-500 text-sm focus:outline-none focus:border-[#e06b3a] transition-all font-mono"
-            />
+            <div className="relative">
+              <input
+                type={showKey ? "text" : "password"}
+                value={apiKey}
+                onChange={(e) => {
+                  setApiKey(e.target.value);
+                  setTestState({ status: 'idle' });
+                }}
+                placeholder={hasEnvKey ? "•••••••••••••••••••••••• (Đã có key build sẵn)" : "Dán mã AI Studio API Key (AIzaSy...)"}
+                className="w-full px-3.5 py-2.5 pr-10 bg-[#18181c] border border-zinc-700/80 rounded-xl text-zinc-100 placeholder-zinc-500 text-sm focus:outline-none focus:border-[#e06b3a] transition-all font-mono"
+              />
+              <button
+                type="button"
+                onClick={() => setShowKey(!showKey)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-200 p-1"
+                title={showKey ? "Ẩn API Key" : "Hiển thị API Key"}
+              >
+                {showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
           </div>
 
           {/* Test API Key Button & Diagnostics */}

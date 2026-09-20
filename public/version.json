@@ -1,5 +1,5 @@
 {
-  "version": "1.0.3",
-  "buildTime": 1758358200000,
-  "description": "Cập nhật tối ưu hóa thuật toán dịch tự động, hỗ trợ tải dữ liệu qua GitHub Pages và tự động giữ nguyên dữ liệu cá nhân."
+  "version": "1.0.4",
+  "buildTime": 1758362000000,
+  "description": "Bản cập nhật v1.0.4: Nâng cấp kho lưu trữ cục bộ offline-first cho truyện đã dịch, thêm nút Lưu trữ nhanh, hiển thị/ẩn API Key bảo mật và cải tiến thuật toán kiểm tra phiên bản."
 }
