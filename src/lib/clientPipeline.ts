@@ -72,33 +72,40 @@ export async function extractComicImagesClient(url: string): Promise<{ title: st
     return { title: 'Trang truyện ảnh', images: [targetUrl] };
   }
 
-  let html = '';
+  let htmlOrMd = '';
   let lastFetchErr = '';
 
-  // Parallel & cascading proxy pool for fast response
+  // Multi-tier proxy pool:
+  // 1. Jina Reader (bypasses Cloudflare, renders JS, outputs clean markdown with full image URLs)
+  // 2. allorigins raw & codetabs proxies
   const proxyEndpoints = [
-    `https://corsproxy.io/?url=${encodeURIComponent(targetUrl)}`,
-    `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`,
+    `https://r.jina.ai/${targetUrl}`,
+    `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`,
     `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(targetUrl)}`,
-    `https://thingproxy.freeboard.io/fetch/${targetUrl}`,
+    `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`,
+    `https://corsproxy.io/?url=${encodeURIComponent(targetUrl)}`,
   ];
 
-  // Try fetching HTML via proxies
+  // Try fetching HTML or Markdown via proxy pool
   for (const proxyUrl of proxyEndpoints) {
     try {
-      const res = await fetch(proxyUrl, { signal: AbortSignal.timeout(8000) });
+      const res = await fetch(proxyUrl, { signal: AbortSignal.timeout(9000) });
       if (!res.ok) continue;
 
       if (proxyUrl.includes('allorigins.win/get')) {
         const json = await res.json();
         if (json?.contents && json.contents.length > 200) {
-          html = json.contents;
+          htmlOrMd = json.contents;
           break;
         }
       } else {
         const text = await res.text();
         if (text && text.length > 200) {
-          html = text;
+          // Check if proxy returned an error JSON or blocked page
+          if (text.includes('"error":"A valid API key is required') || text.includes('Error 403')) {
+            continue;
+          }
+          htmlOrMd = text;
           break;
         }
       }
@@ -107,7 +114,7 @@ export async function extractComicImagesClient(url: string): Promise<{ title: st
     }
   }
 
-  if (!html) {
+  if (!htmlOrMd) {
     throw new Error(
       `URL_ACCESS_DENIED: Không thể kết nối đến trang truyện do máy chủ chặn truy cập (CORS / Cloudflare). ${lastFetchErr ? `Chi tiết: ${lastFetchErr}` : ''}`
     );
@@ -115,10 +122,11 @@ export async function extractComicImagesClient(url: string): Promise<{ title: st
 
   // Check if page returned a Cloudflare Bot Protection Challenge
   if (
-    html.includes('Just a moment...') ||
-    html.includes('cf-browser-verification') ||
-    html.includes('Cloudflare Ray ID') ||
-    html.includes('Enable JavaScript and cookies to continue')
+    (htmlOrMd.includes('Just a moment...') ||
+     htmlOrMd.includes('cf-browser-verification') ||
+     htmlOrMd.includes('Cloudflare Ray ID') ||
+     htmlOrMd.includes('Enable JavaScript and cookies to continue')) &&
+    !htmlOrMd.includes('http')
   ) {
     throw new Error(
       'CLOUDFLARE_PROTECTED: Trang web truyện này đang bật tường lửa Cloudflare chống bot khiến máy chủ proxy bị chặn tạm thời. Vui lòng chuyển sang tab "Tải ảnh lên" hoặc chọn file ZIP truyện để dịch tức thì.'
@@ -126,37 +134,66 @@ export async function extractComicImagesClient(url: string): Promise<{ title: st
   }
 
   // Match title
-  const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+  const titleMatch = htmlOrMd.match(/<title[^>]*>([^<]+)<\/title>/i) || htmlOrMd.match(/^Title:\s*(.+)$/m);
   const title = titleMatch ? titleMatch[1].trim() : 'Manga Page';
 
-  // Match all img tags
-  const imgRegex = /<img\s+[^>]*>/gi;
-  const matches = html.match(imgRegex) || [];
   const candidates: string[] = [];
   const seen = new Set<string>();
+  const excludePatterns = [
+    /logo/i,
+    /avatar/i,
+    /icon/i,
+    /banner/i,
+    /advert/i,
+    /fb_share/i,
+    /widget/i,
+    /favicon/i,
+    /1x1/i,
+    /pixel/i,
+    /dflazy/i,
+    /emoji/i,
+    /\.svg(\?.*)?$/i,
+  ];
 
-  const excludePatterns = [/logo/i, /avatar/i, /icon/i, /banner/i, /advert/i, /fb_share/i, /widget/i, /favicon/i, /1x1/i, /pixel/i];
+  // 1. Extract Markdown image links: ![alt](url)
+  const mdImgRegex = /!\[.*?\]\((https?:\/\/[^\s\)]+)\)/gi;
+  let mdMatch;
+  while ((mdMatch = mdImgRegex.exec(htmlOrMd)) !== null) {
+    const rawUrl = mdMatch[1].trim();
+    if (excludePatterns.some((rx) => rx.test(rawUrl))) continue;
+    if (!seen.has(rawUrl)) {
+      seen.add(rawUrl);
+      candidates.push(rawUrl);
+    }
+  }
+
+  // 2. Extract HTML <img> tags
+  const imgRegex = /<img\s+[^>]*>/gi;
+  const matches = htmlOrMd.match(imgRegex) || [];
 
   for (const imgTag of matches) {
     let src = '';
-    
+
     // Match lazy load srcset or data-srcset
     const srcsetMatch = imgTag.match(/(?:data-srcset|srcset)=["']([^"']+)["']/i);
     if (srcsetMatch) {
       const parts = srcsetMatch[1].split(',').map((s: string) => s.trim().split(/\s+/)[0]);
-      if (parts.length > 0) src = parts[parts.length - 1];
+      if (parts.length > 0) src = parts[parts.length - 1].trim();
     }
 
     if (!src) {
-      const attrMatch = imgTag.match(/(?:data-src|data-original|data-lazy-src|data-url|data-image|data-cdn|src)=["']([^"']+)["']/i);
-      if (attrMatch) src = attrMatch[1];
+      const attrMatch = imgTag.match(
+        /(?:data-src|data-original|data-lazy-src|data-url|data-image|data-cdn|src)=["']([^"']+)["']/i
+      );
+      if (attrMatch) src = attrMatch[1].trim();
     }
 
     if (!src || src.startsWith('data:image')) continue;
 
     try {
-      // Resolve absolute URL
-      const absoluteUrl = new URL(src, targetUrl).toString();
+      // Resolve absolute URL & clean whitespace
+      const cleanedSrc = src.trim().replace(/^[\r\n\t\s]+|[\r\n\t\s]+$/g, '');
+      const absoluteUrl = new URL(cleanedSrc, targetUrl).toString();
       if (excludePatterns.some((rx) => rx.test(absoluteUrl))) continue;
       if (!seen.has(absoluteUrl)) {
         seen.add(absoluteUrl);
