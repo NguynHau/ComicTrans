@@ -1,0 +1,63 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: manga_postgres
+    environment:
+      POSTGRES_USER: manga_user
+      POSTGRES_PASSWORD: manga_password
+      POSTGRES_DB: manga_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U manga_user -d manga_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: manga_backend
+    environment:
+      DATABASE_URL: postgresql://manga_user:manga_password@postgres:5432/manga_db
+      CORS_ORIGINS: http://localhost:3000
+      PORT: 8000
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      TRANSLATION_PROVIDER: ${TRANSLATION_PROVIDER:-gemini}
+      OCR_PROVIDER: ${OCR_PROVIDER:-gemini}
+      STORAGE_PROVIDER: ${STORAGE_PROVIDER:-local}
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend/storage:/app/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/api/v1/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: manga_frontend
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      BACKEND_URL: http://backend:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  postgres_data:

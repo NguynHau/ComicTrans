@@ -1,0 +1,6 @@
+{
+  "name": "Manga Translator PWA",
+  "description": "Mobile-first Progressive Web App to translate manga, manhwa, and manhua from URL with OCR, translation, inpainting, and typesetting.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
