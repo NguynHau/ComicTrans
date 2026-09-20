@@ -23,21 +23,22 @@ export function wrapText(text: string, maxCharsPerLine: number): string[] {
   return lines;
 }
 
-// Calculate the optimal font size and layout for fitting text inside a bubble
+// Calculate the optimal font size and layout for fitting text inside a bubble automatically
 export function layoutDialogueText(
   text: string,
   bubbleWidth: number,
   bubbleHeight: number
 ): { fontSize: number; lines: string[]; lineHeight: number; totalH: number } {
-  const usableWidth = Math.max(20, bubbleWidth * 0.75);
-  const usableHeight = Math.max(16, bubbleHeight * 0.75);
+  // Use 82% usable width/height to guarantee a safe internal margin inside speech bubbles
+  const usableWidth = Math.max(20, bubbleWidth * 0.82);
+  const usableHeight = Math.max(16, bubbleHeight * 0.82);
 
   const maxFont = Math.min(
-    Math.round(bubbleHeight * 0.32),
-    Math.round(bubbleWidth * 0.22),
-    40
+    Math.round(bubbleHeight * 0.35),
+    Math.round(bubbleWidth * 0.25),
+    36
   );
-  const minFont = Math.max(10, Math.min(13, Math.round(usableHeight * 0.15)));
+  const minFont = Math.max(10, Math.min(13, Math.round(usableHeight * 0.16)));
 
   for (let fontSize = Math.max(12, maxFont); fontSize >= minFont; fontSize -= 1) {
     const charWidth = fontSize * 0.58;
@@ -353,10 +354,11 @@ TASK:
    - "xmax": Right coordinate of the speech bubble boundary (integer 0 to 1000).
    - "bubble_shape": "ellipse" or "rectangle".
    - "bg_color": Background fill color inside the bubble (default "#ffffff").
-3. CRITICAL MANDATES:
-   - You MUST identify and include EVERY dialogue bubble on the page. Do NOT skip any bubble.
-   - Coordinates MUST accurately tightly enclose the speech bubble.
-   - Order the items in reading order (top to bottom).
+3. CRITICAL ACCURACY MANDATES:
+   - "ymin", "xmin", "ymax", "xmax" MUST tightly enclose the ENTIRE SPEECH BUBBLE CONTAINING THE TEXT (the full white balloon or box outline), NOT just the inner text lines!
+   - Ensure ymin < ymax and xmin < xmax. Scale is 0 to 1000 relative to image bounds.
+   - For rounded speech balloons, set "bubble_shape": "ellipse". For rectangular narration boxes, set "bubble_shape": "rectangle".
+   - You MUST identify and include EVERY dialogue bubble on the page. Order items in top-to-bottom reading order.
 Return a valid JSON array of all detected speech bubbles.`;
 
   const requestBody = JSON.stringify({
@@ -461,10 +463,26 @@ Return a valid JSON array of all detected speech bubbles.`;
       const translations: TranslationItem[] = [];
 
       items.forEach((item, idx) => {
-        const ymin = typeof item.ymin === 'number' ? item.ymin : 0;
-        const xmin = typeof item.xmin === 'number' ? item.xmin : 0;
-        const ymax = typeof item.ymax === 'number' ? item.ymax : 1000;
-        const xmax = typeof item.xmax === 'number' ? item.xmax : 1000;
+        const rawYmin = typeof item.ymin === 'number' ? item.ymin : 0;
+        const rawXmin = typeof item.xmin === 'number' ? item.xmin : 0;
+        const rawYmax = typeof item.ymax === 'number' ? item.ymax : 1000;
+        const rawXmax = typeof item.xmax === 'number' ? item.xmax : 1000;
+
+        // Ensure ymin < ymax and xmin < xmax
+        let ymin = Math.min(rawYmin, rawYmax);
+        let ymax = Math.max(rawYmin, rawYmax);
+        let xmin = Math.min(rawXmin, rawXmax);
+        let xmax = Math.max(rawXmin, rawXmax);
+
+        // Clamp to 0..1000
+        ymin = Math.max(0, Math.min(1000, ymin));
+        ymax = Math.max(0, Math.min(1000, ymax));
+        xmin = Math.max(0, Math.min(1000, xmin));
+        xmax = Math.max(0, Math.min(1000, xmax));
+
+        // Ensure minimum speech bubble size
+        if (ymax - ymin < 12) ymax = Math.min(1000, ymin + 20);
+        if (xmax - xmin < 12) xmax = Math.min(1000, xmin + 20);
 
         ocr_results.push({
           id: `bubble_${Date.now()}_${idx}`,
@@ -564,19 +582,24 @@ export async function renderInpaintedTranslatedImageClient(
 
           ctx.save();
 
-          // A. Inpainting: Solid white background covering exact speech bubble position
+          // A. Inpainting: Solid white background with subtle 2% safety margin covering exact speech bubble position
+          const padW = w * 0.02;
+          const padH = h * 0.02;
+          const ix = Math.max(0, x - padW);
+          const iy = Math.max(0, y - padH);
+          const iw = w + padW * 2;
+          const ih = h + padH * 2;
+
           ctx.fillStyle = '#ffffff';
           if (bubbleShape === 'rectangle') {
-            const rw = Math.max(6, w);
-            const rh = Math.max(6, h);
             ctx.beginPath();
-            ctx.roundRect(x, y, rw, rh, Math.min(10, Math.min(w, h) * 0.2));
+            ctx.roundRect(ix, iy, iw, ih, Math.min(10, Math.min(iw, ih) * 0.2));
             ctx.fill();
           } else {
             const cx = x + w / 2;
             const cy = y + h / 2;
-            const rx = Math.max(3, w / 2);
-            const ry = Math.max(3, h / 2);
+            const rx = Math.max(3, iw / 2);
+            const ry = Math.max(3, ih / 2);
             ctx.beginPath();
             ctx.ellipse(cx, cy, rx, ry, 0, 0, 2 * Math.PI);
             ctx.fill();
