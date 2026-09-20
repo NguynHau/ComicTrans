@@ -120,21 +120,25 @@ export function parseTranslationError(err: any): DetailedError {
     };
   }
 
-  // 6. URL Access Denied / CORS / Cloudflare block
+  // 6. Cloudflare Bot Protection or URL Access Denied
   if (
+    rawMsg.includes('CLOUDFLARE_PROTECTED') ||
     rawMsg.includes('URL_ACCESS_DENIED') ||
     rawMsg.includes('Không thể kết nối đến trang truyện') ||
     rawMsg.includes('CORS') && rawMsg.includes('trang') ||
     rawMsg.includes('Cloudflare')
   ) {
+    const isCloudflare = rawMsg.includes('CLOUDFLARE_PROTECTED') || rawMsg.includes('Cloudflare');
     return {
       category: 'URL_ACCESS_DENIED',
-      categoryLabel: 'Lỗi Truy Cập Trang Web',
-      title: 'Không thể kết nối đến địa chỉ truyện',
-      message: 'Máy chủ trang truyện đã chặn yêu cầu trích xuất từ bên ngoài hoặc đường dẫn URL không thể truy cập.',
-      suggestion: 'Kiểm tra lại xem link truyện có mở được trên trình duyệt không, hoặc tải các trang ảnh về máy và tải lên ứng dụng.',
+      categoryLabel: isCloudflare ? 'Chặn Bởi Cloudflare' : 'Lỗi Truy Cập Trang Web',
+      title: isCloudflare ? 'Trang truyện bật bảo vệ chống bot' : 'Không thể kết nối đến địa chỉ truyện',
+      message: isCloudflare
+        ? 'Website truyện tranh này vừa bật tường lửa Cloudflare chống cào dữ liệu, khiến máy chủ trung gian bị chặn tạm thời.'
+        : 'Máy chủ trang truyện đã chặn yêu cầu trích xuất từ bên ngoài hoặc đường dẫn URL tạm thời không phản hồi.',
+      suggestion: 'Để không bị phụ thuộc vào link web, bạn có thể lưu ảnh/chương truyện về máy rồi bấm "Tải Ảnh / Tệp ZIP" để dịch 100% mượt mà.',
       actionType: 'upload_tab',
-      actionLabel: 'Tải Ảnh Từ Thiết Bị',
+      actionLabel: 'Tải Ảnh / Tệp ZIP Lên',
       rawDetails: rawMsg,
     };
   }

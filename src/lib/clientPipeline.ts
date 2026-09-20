@@ -75,7 +75,7 @@ export async function extractComicImagesClient(url: string): Promise<{ title: st
   let html = '';
   let lastFetchErr = '';
 
-  // Try fetching HTML via multiple CORS proxies in order
+  // Parallel & cascading proxy pool for fast response
   const proxyEndpoints = [
     `https://corsproxy.io/?url=${encodeURIComponent(targetUrl)}`,
     `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`,
@@ -83,14 +83,15 @@ export async function extractComicImagesClient(url: string): Promise<{ title: st
     `https://thingproxy.freeboard.io/fetch/${targetUrl}`,
   ];
 
+  // Try fetching HTML via proxies
   for (const proxyUrl of proxyEndpoints) {
     try {
-      const res = await fetch(proxyUrl, { signal: AbortSignal.timeout(12000) });
+      const res = await fetch(proxyUrl, { signal: AbortSignal.timeout(8000) });
       if (!res.ok) continue;
 
       if (proxyUrl.includes('allorigins.win/get')) {
         const json = await res.json();
-        if (json?.contents) {
+        if (json?.contents && json.contents.length > 200) {
           html = json.contents;
           break;
         }
@@ -109,6 +110,18 @@ export async function extractComicImagesClient(url: string): Promise<{ title: st
   if (!html) {
     throw new Error(
       `URL_ACCESS_DENIED: Không thể kết nối đến trang truyện do máy chủ chặn truy cập (CORS / Cloudflare). ${lastFetchErr ? `Chi tiết: ${lastFetchErr}` : ''}`
+    );
+  }
+
+  // Check if page returned a Cloudflare Bot Protection Challenge
+  if (
+    html.includes('Just a moment...') ||
+    html.includes('cf-browser-verification') ||
+    html.includes('Cloudflare Ray ID') ||
+    html.includes('Enable JavaScript and cookies to continue')
+  ) {
+    throw new Error(
+      'CLOUDFLARE_PROTECTED: Trang web truyện này đang bật tường lửa Cloudflare chống bot khiến máy chủ proxy bị chặn tạm thời. Vui lòng chuyển sang tab "Tải ảnh lên" hoặc chọn file ZIP truyện để dịch tức thì.'
     );
   }
 
@@ -215,14 +228,17 @@ export async function ensureImageAsJpegBase64(imageUrl: string): Promise<string>
     return dataUrl;
   } catch (directErr) {
     // If direct load fails (common due to CORS or Hotlink protection), proxy the image Blob
+    // Use images.weserv.nl first (global high-speed CDN image proxy with hotlink bypass)
     const proxyUrls = [
+      `https://images.weserv.nl/?url=${encodeURIComponent(imageUrl)}&output=jpg&q=90`,
       `https://corsproxy.io/?url=${encodeURIComponent(imageUrl)}`,
       `https://api.allorigins.win/raw?url=${encodeURIComponent(imageUrl)}`,
+      `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(imageUrl)}`,
     ];
 
     for (const pUrl of proxyUrls) {
       try {
-        const res = await fetch(pUrl, { signal: AbortSignal.timeout(6000) });
+        const res = await fetch(pUrl, { signal: AbortSignal.timeout(8000) });
         if (res.ok) {
           const blob = await res.blob();
           const base64 = await new Promise<string>((resBlob, rejBlob) => {
