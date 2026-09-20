@@ -7,6 +7,7 @@ import { JobProgressCard } from './components/JobProgressCard';
 import { MangaReader } from './components/MangaReader';
 import { ApiDocsModal } from './components/ApiDocsModal';
 import { SettingsModal } from './components/SettingsModal';
+import { UpdateModal } from './components/UpdateModal';
 import { MangaJob, MangaPage, RecentItem, DetailedError } from './types';
 import { RefreshCw } from 'lucide-react';
 import {
@@ -24,6 +25,7 @@ export function App() {
   const [detailedError, setDetailedError] = useState<DetailedError | null>(null);
   const [isApiDocsModalOpen, setIsApiDocsModalOpen] = useState<boolean>(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState<boolean>(false);
+  const [isUpdateModalOpen, setIsUpdateModalOpen] = useState<boolean>(false);
 
   // Keep a ref to track current active job for cancellation inside the loop
   const activeJobRef = useRef<MangaJob | null>(null);
@@ -358,6 +360,7 @@ export function App() {
       <Navbar
         onOpenApiDocs={() => setIsApiDocsModalOpen(true)}
         onOpenSettings={() => setIsSettingsModalOpen(true)}
+        onOpenUpdateModal={() => setIsUpdateModalOpen(true)}
         onReset={handleReset}
         hasActiveJob={!!activeJob}
       />
@@ -432,6 +435,13 @@ export function App() {
       <SettingsModal
         isOpen={isSettingsModalOpen}
         onClose={() => setIsSettingsModalOpen(false)}
+        onOpenUpdateModal={() => setIsUpdateModalOpen(true)}
+      />
+
+      {/* Check & Apply Update Modal */}
+      <UpdateModal
+        isOpen={isUpdateModalOpen}
+        onClose={() => setIsUpdateModalOpen(false)}
       />
     </div>
   );

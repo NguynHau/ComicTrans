@@ -1,13 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { X, Key, ShieldCheck, HelpCircle, CheckCircle2, AlertTriangle, RefreshCw, ExternalLink } from 'lucide-react';
+import { X, Key, ShieldCheck, HelpCircle, CheckCircle2, AlertTriangle, RefreshCw, ExternalLink, Sparkles } from 'lucide-react';
 import { testGeminiApiKey } from '../lib/errorUtils';
+import { CURRENT_VERSION } from '../lib/updateChecker';
 
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onOpenUpdateModal?: () => void;
 }
 
-export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose }) => {
+export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, onOpenUpdateModal }) => {
   const [apiKey, setApiKey] = useState('');
   const [saved, setSaved] = useState(false);
   const [testState, setTestState] = useState<{
@@ -163,6 +165,27 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                   <p className="text-[11px] text-rose-300/90 leading-tight">{testState.message}</p>
                 </div>
               </div>
+            )}
+          </div>
+
+          {/* Update Section */}
+          <div className="pt-2 border-t border-zinc-800 flex items-center justify-between text-xs">
+            <div className="flex items-center gap-1.5 text-zinc-400">
+              <Sparkles className="w-3.5 h-3.5 text-[#e06b3a]" />
+              <span>Phiên bản app: <strong className="text-zinc-200">v{CURRENT_VERSION.version}</strong></span>
+            </div>
+            {onOpenUpdateModal && (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onOpenUpdateModal();
+                }}
+                className="text-[11px] font-semibold text-[#e06b3a] hover:text-orange-400 flex items-center gap-1 bg-[#e06b3a]/10 hover:bg-[#e06b3a]/20 px-2.5 py-1 rounded-lg border border-[#e06b3a]/30 transition-colors"
+              >
+                <RefreshCw className="w-3 h-3" />
+                <span>Kiểm tra cập nhật</span>
+              </button>
             )}
           </div>
 

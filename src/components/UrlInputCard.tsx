@@ -543,16 +543,6 @@ export const UrlInputCard: React.FC<UrlInputCardProps> = ({
         onChange={handleZipSelected}
         className="hidden"
       />
-
-      {/* Floating Spark Icon at bottom right (Matches the Star/Sparkle in Mockup) */}
-      <button
-        type="button"
-        onClick={onOpenSettings}
-        className="fixed bottom-6 right-6 w-11 h-11 rounded-full bg-[#18181c] border border-zinc-700/70 hover:border-orange-500/60 text-[#e06b3a] shadow-xl shadow-black/60 flex items-center justify-center transition-all hover:scale-105 active:scale-95 z-30 group"
-        title="Cài đặt AI & Gemini API Key"
-      >
-        <Sparkles className="w-5 h-5 text-[#e06b3a] group-hover:rotate-12 transition-transform" />
-      </button>
     </div>
   );
 };
