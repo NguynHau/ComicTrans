@@ -1,0 +1,277 @@
+import React, { useState, useRef, useEffect } from 'react';
+import { motion, useSpring, useMotionValue, useTransform } from 'motion/react';
+import { Home, BookOpen, Plus, RefreshCw, Settings } from 'lucide-react';
+
+interface LiquidGlassIslandProps {
+  activeTab: string;
+  onChangeTab: (tabId: string) => void;
+}
+
+const TABS = [
+  { id: 'home', label: 'Trang chủ', icon: Home },
+  { id: 'manga', label: 'Truyện', icon: BookOpen },
+  { id: 'update', label: 'Cập nhật', icon: RefreshCw },
+  { id: 'settings', label: 'Cài đặt', icon: Settings },
+];
+
+export const LiquidGlassIsland: React.FC<LiquidGlassIslandProps> = ({
+  activeTab,
+  onChangeTab,
+}) => {
+  const activeIdx = TABS.findIndex((t) => t.id === activeTab);
+  const activeIndexSafe = activeIdx !== -1 ? activeIdx : 0;
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Position calculation for 4 equal tab slots
+  const blobTargetX = useMotionValue(0);
+  const pressTargetScaleX = useMotionValue(1);
+  const pressTargetScaleY = useMotionValue(1);
+
+  // 1. Horizontal Motion Spring
+  const animatedX = useSpring(blobTargetX, {
+    stiffness: 1000,
+    damping: 21,
+    mass: 0.5,
+  });
+
+  // 2. Press Swell Scale Springs
+  const pressScaleX = useSpring(pressTargetScaleX, {
+    stiffness: 350,
+    damping: 25,
+  });
+
+  const pressScaleY = useSpring(pressTargetScaleY, {
+    stiffness: 350,
+    damping: 25,
+  });
+
+  // Dynamic Clip-Path that moves synchronously with animatedX
+  const clipPathStyle = useTransform(
+    animatedX,
+    (x) => `inset(-20px calc(100% - (${x}px + 71px)) -20px ${x}px round 9999px)`
+  );
+
+  const isDragging = useRef(false);
+  const pointerStartRef = useRef(0);
+  const xStartRef = useRef(0);
+
+  // Helper to calculate dynamic bounds based on current container width
+  const getBounds = () => {
+    if (!containerRef.current) return { min: 0, max: 280, itemWidth: 70 };
+    const containerWidth = containerRef.current.offsetWidth || 350;
+    const itemWidth = containerWidth / TABS.length;
+    const min = itemWidth / 2 - 35.5;
+    const max = (TABS.length - 1) * itemWidth + itemWidth / 2 - 35.5;
+    return { min, max, itemWidth };
+  };
+
+  // Calculate and update position based on active tab index
+  const updatePosition = (idx: number) => {
+    if (isDragging.current) return; // Do not interrupt during manual drag
+    const { min, itemWidth } = getBounds();
+    const targetX = idx * itemWidth + itemWidth / 2 - 35.5;
+    blobTargetX.set(targetX);
+  };
+
+  useEffect(() => {
+    updatePosition(activeIndexSafe);
+  }, [activeIndexSafe]);
+
+  useEffect(() => {
+    const handleResize = () => updatePosition(activeIndexSafe);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [activeIndexSafe]);
+
+  const handlePointerDown = (idx: number) => {
+    onChangeTab(TABS[idx].id);
+    pressTargetScaleX.set(1.35);
+    pressTargetScaleY.set(1.4);
+  };
+
+  const handlePointerUp = () => {
+    pressTargetScaleX.set(1);
+    pressTargetScaleY.set(1);
+  };
+
+  const handleTabClick = (tabId: string, idx: number) => {
+    onChangeTab(tabId);
+  };
+
+  const handleDropletPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return; // only left click / primary touch
+    isDragging.current = true;
+    pointerStartRef.current = e.clientX;
+    xStartRef.current = blobTargetX.get();
+
+    // SWELL scales when grabbed
+    pressTargetScaleX.set(1.35);
+    pressTargetScaleY.set(1.4);
+
+    if (e.currentTarget) {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    }
+  };
+
+  const handleDropletPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isDragging.current) return;
+
+    const deltaX = e.clientX - pointerStartRef.current;
+    const { min, max } = getBounds();
+    const rawNewX = xStartRef.current + deltaX;
+
+    // Elastic boundary formula (like iOS scroll bouncing)
+    let constrainedX = rawNewX;
+    if (rawNewX < min) {
+      const overdrag = min - rawNewX;
+      constrainedX = min - overdrag * 0.35; // 35% elasticity
+    } else if (rawNewX > max) {
+      const overdrag = rawNewX - max;
+      constrainedX = max + overdrag * 0.35; // 35% elasticity
+    }
+
+    blobTargetX.set(constrainedX);
+  };
+
+  const handleDropletPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isDragging.current) return;
+    isDragging.current = false;
+
+    if (e.currentTarget) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+
+    pressTargetScaleX.set(1);
+    pressTargetScaleY.set(1);
+
+    const { min, itemWidth } = getBounds();
+    const currentX = blobTargetX.get();
+    
+    // Snaps cleanly to the nearest slot
+    const closestIdx = Math.max(
+      0,
+      Math.min(TABS.length - 1, Math.round((currentX - min) / itemWidth))
+    );
+
+    const targetX = closestIdx * itemWidth + itemWidth / 2 - 35.5;
+    blobTargetX.set(targetX);
+    onChangeTab(TABS[closestIdx].id);
+  };
+
+  return (
+    <>
+      {/* Hidden SVG Definition for Gradient Active Icons */}
+      <svg className="absolute w-0 h-0 opacity-0 pointer-events-none" aria-hidden="true">
+        <defs>
+          <linearGradient id="bottom-nav-active-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stopColor="#e06b3a" /> {/* App Signature Orange */}
+            <stop offset="100%" stopColor="#ff7e40" /> {/* Bright Peach Orange */}
+          </linearGradient>
+        </defs>
+      </svg>
+ 
+      {/* Outer Floating Bar Fixed Shell */}
+      <div className="fixed bottom-6 left-0 right-0 z-30 flex flex-col items-center px-4 pointer-events-none pb-[env(safe-area-inset-top)] md:pb-[env(safe-area-inset-bottom)] pb-[env(safe-area-inset-bottom)]">
+        {/* Liquid Glass Island Base Container */}
+        <div
+          ref={containerRef}
+          style={{
+            width: '100%',
+            minWidth: 280,
+            maxWidth: 500,
+            height: 64,
+            borderRadius: 9999,
+            backgroundColor: 'rgba(255, 255, 255, 0)',
+            backdropFilter: 'blur(2.5px) saturate(50%) brightness(100%) contrast(100%)',
+            WebkitBackdropFilter: 'blur(2.5px) saturate(50%) brightness(100%) contrast(100%)',
+            border: '0.2px solid rgba(255, 255, 255, 0.15)',
+            boxShadow:
+              '0px -30px 0px 0px rgba(0, 0, 0, 0), inset 0 1px 1px rgba(255, 255, 255, 0)',
+          }}
+          className="relative pointer-events-auto flex items-center justify-between px-1.5 select-none mx-auto"
+        >
+          {/* Liquid Droplet Indicator (Droplet Swell & Slide) */}
+          <motion.div
+            onPointerDown={handleDropletPointerDown}
+            onPointerMove={handleDropletPointerMove}
+            onPointerUp={handleDropletPointerUp}
+            onPointerCancel={handleDropletPointerUp}
+            style={{
+              x: animatedX,
+              scaleX: pressScaleX,
+              scaleY: pressScaleY,
+              width: 71,
+              height: 54,
+              borderRadius: 9999,
+              background:
+                'radial-gradient(ellipse at 50% 20%, rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, 0.02) 65%, rgba(255, 255, 255, 0.05) 100%)',
+              backdropFilter: 'blur(0px) saturate(50%) contrast(50%)',
+              WebkitBackdropFilter: 'blur(0px) saturate(50%) contrast(50%)',
+              boxShadow:
+                'inset 0 1px 1.5px rgba(255, 255, 255, 0), inset 1.1px -1.1px 0px 0px rgba(255, 255, 255, 0.48), inset 1.6px -1.6px 0px rgba(255, 255, 255, 0.216)',
+              top: '5px',
+            }}
+            className="absolute left-0 pointer-events-auto z-0 border border-white/20 cursor-grab active:cursor-grabbing touch-none"
+          />
+
+          {/* LAYER 1: Inactive Icons Base (#737373) */}
+          <div className="w-full h-full flex items-center justify-around relative z-10">
+            {TABS.map((tab, idx) => {
+              const IconComp = tab.icon;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onPointerDown={() => handlePointerDown(idx)}
+                  onPointerUp={handlePointerUp}
+                  onPointerLeave={handlePointerUp}
+                  onClick={() => handleTabClick(tab.id, idx)}
+                  style={{
+                    width: '25%',
+                    height: 64,
+                  }}
+                  className="flex flex-col items-center justify-center text-[#737373] transition-colors hover:text-zinc-300 focus:outline-none cursor-pointer"
+                >
+                  <IconComp size={24} stroke="#737373" strokeWidth={2.5} className="floating-icon-inactive" />
+                </button>
+              );
+            })}
+          </div>
+
+          {/* LAYER 2: Active Icons Overlaid with Dynamic Clip-Path Masking */}
+          <motion.div
+            style={{
+              clipPath: clipPathStyle,
+              height: 64,
+            }}
+            className="absolute inset-x-0 top-0 px-1.5 z-20 pointer-events-none flex items-center justify-around bg-transparent"
+          >
+            {TABS.map((tab) => {
+              const IconComp = tab.icon;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  tabIndex={-1}
+                  disabled
+                  style={{
+                    width: '25%',
+                    height: 64,
+                  }}
+                  className="flex-1 h-full flex flex-col items-center justify-center focus:outline-none disabled:opacity-100"
+                >
+                  <IconComp 
+                    size={24} 
+                    stroke="url(#bottom-nav-active-gradient)" 
+                    strokeWidth={2.5} 
+                    style={{ filter: 'drop-shadow(0 2px 8px rgba(224, 107, 58, 0.45))' }}
+                  />
+                </button>
+              );
+            })}
+          </motion.div>
+        </div>
+      </div>
+    </>
+  );
+};

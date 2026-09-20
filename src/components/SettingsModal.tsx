@@ -73,7 +73,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, o
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
       <div className="bg-[#141417] border border-zinc-800 rounded-2xl w-full max-w-md shadow-2xl p-5 relative space-y-4">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
