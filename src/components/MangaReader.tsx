@@ -105,21 +105,21 @@ export const MangaReader: React.FC<MangaReaderProps> = ({
         {/* Container 2: Lưu trữ button */}
         <div className="flex-shrink-0">
           {(() => {
-            const isAllCompleted = pages.length > 0 && pages.every(p => p.status === 'completed' && !!(p.processed_image || p.source_image));
+            const isReadyToSave = pages.length > 0;
             return (
               <button
                 onClick={handleSaveArchive}
-                disabled={!isAllCompleted}
+                disabled={!isReadyToSave}
                 className={`py-2.5 px-4 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-md ${
-                  !isAllCompleted
+                  !isReadyToSave
                     ? 'opacity-40 cursor-not-allowed bg-zinc-900 text-zinc-500 border border-zinc-800'
                     : savedSuccess
                     ? 'bg-emerald-600 text-white'
                     : 'bg-[#141417] hover:bg-zinc-800 text-zinc-200 border border-zinc-700/80'
                 }`}
-                title={!isAllCompleted ? "Vui lòng chờ AI dịch xong tất cả các trang mới có thể lưu trữ" : "Lưu bản dịch vào máy và hiển thị ở tab Truyện"}
+                title="Lưu bản dịch vào máy và hiển thị ở tab Truyện"
               >
-                <BookmarkCheck className={`w-4 h-4 flex-shrink-0 ${isAllCompleted ? 'text-orange-400' : 'text-zinc-600'}`} />
+                <BookmarkCheck className={`w-4 h-4 flex-shrink-0 ${isReadyToSave ? 'text-orange-400' : 'text-zinc-600'}`} />
                 <span>{savedSuccess ? 'Đã lưu!' : 'Lưu trữ'}</span>
               </button>
             );
@@ -223,41 +223,43 @@ export const MangaReader: React.FC<MangaReaderProps> = ({
           </div>
         )}
 
-        {/* Integrated Bottom Controls Bar */}
-        <div className="w-full bg-[#141417] border-t border-zinc-800/80 p-3 flex items-center justify-between gap-3 text-zinc-300">
-          <button
-            onClick={handlePrevPage}
-            disabled={currentPageIdx === 0 || viewMode === 'scroll'}
-            className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 disabled:opacity-30 disabled:pointer-events-none text-xs font-semibold transition-colors"
-          >
-            <ChevronLeft className="w-4 h-4" />
-            <span>Trước</span>
-          </button>
-
-          {/* Page selector dropdown */}
-          <div className="flex items-center">
-            <select
-              value={currentPageIdx}
-              onChange={(e) => setCurrentPageIdx(Number(e.target.value))}
-              className="bg-zinc-800 border border-zinc-700/80 rounded-xl px-3 py-1.5 text-xs font-medium text-zinc-200 focus:outline-none focus:ring-1 focus:ring-orange-500"
+        {/* Integrated Bottom Controls Bar (Only in Single View mode) */}
+        {viewMode === 'single' && (
+          <div className="w-full bg-[#141417] border-t border-zinc-800/80 p-3 flex items-center justify-between gap-3 text-zinc-300">
+            <button
+              onClick={handlePrevPage}
+              disabled={currentPageIdx === 0}
+              className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 disabled:opacity-30 disabled:pointer-events-none text-xs font-semibold transition-colors"
             >
-              {pages.map((p, idx) => (
-                <option key={p.id} value={idx}>
-                  Trang {p.page_number} / {pages.length}
-                </option>
-              ))}
-            </select>
-          </div>
+              <ChevronLeft className="w-4 h-4" />
+              <span>Trước</span>
+            </button>
 
-          <button
-            onClick={handleNextPage}
-            disabled={currentPageIdx >= pages.length - 1 || viewMode === 'scroll'}
-            className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 disabled:opacity-30 disabled:pointer-events-none text-xs font-semibold transition-colors"
-          >
-            <span>Tiếp</span>
-            <ChevronRight className="w-4 h-4" />
-          </button>
-        </div>
+            {/* Page selector dropdown */}
+            <div className="flex items-center">
+              <select
+                value={currentPageIdx}
+                onChange={(e) => setCurrentPageIdx(Number(e.target.value))}
+                className="bg-zinc-800 border border-zinc-700/80 rounded-xl px-3 py-1.5 text-xs font-medium text-zinc-200 focus:outline-none focus:ring-1 focus:ring-orange-500"
+              >
+                {pages.map((p, idx) => (
+                  <option key={p.id} value={idx}>
+                    Trang {p.page_number} / {pages.length}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <button
+              onClick={handleNextPage}
+              disabled={currentPageIdx >= pages.length - 1}
+              className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 disabled:opacity-30 disabled:pointer-events-none text-xs font-semibold transition-colors"
+            >
+              <span>Tiếp</span>
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
