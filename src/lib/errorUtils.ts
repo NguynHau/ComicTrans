@@ -1,4 +1,4 @@
-// Error classification and diagnosis utility for ComicTrans
+// Error classification and diagnosis utility for RiXia
 // Translates technical API and scraping errors into clear, actionable Vietnamese instructions
 
 export type ErrorCategory =

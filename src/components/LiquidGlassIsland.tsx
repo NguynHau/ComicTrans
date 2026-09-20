@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, useSpring, useMotionValue, useTransform } from 'motion/react';
-import { Home, BookOpen, Plus, RefreshCw, Settings } from 'lucide-react';
+import { Home, Compass, Plus, RefreshCw, Settings } from 'lucide-react';
 
 interface LiquidGlassIslandProps {
   activeTab: string;
@@ -9,7 +9,7 @@ interface LiquidGlassIslandProps {
 
 const TABS = [
   { id: 'home', label: 'Trang chủ', icon: Home },
-  { id: 'manga', label: 'Truyện', icon: BookOpen },
+  { id: 'manga', label: 'Truyện', icon: Compass },
   { id: 'update', label: 'Cập nhật', icon: RefreshCw },
   { id: 'settings', label: 'Cài đặt', icon: Settings },
 ];
@@ -29,8 +29,8 @@ export const LiquidGlassIsland: React.FC<LiquidGlassIslandProps> = ({
 
   // 1. Horizontal Motion Spring
   const animatedX = useSpring(blobTargetX, {
-    stiffness: 1000,
-    damping: 21,
+    stiffness: 700,
+    damping: 24,
     mass: 0.5,
   });
 
@@ -45,10 +45,15 @@ export const LiquidGlassIsland: React.FC<LiquidGlassIslandProps> = ({
     damping: 25,
   });
 
-  // Dynamic Clip-Path that moves synchronously with animatedX
+  // Dynamic Clip-Path that scales and moves synchronously with animatedX and pressScaleX
   const clipPathStyle = useTransform(
-    animatedX,
-    (x) => `inset(-20px calc(100% - (${x}px + 71px)) -20px ${x}px round 9999px)`
+    [animatedX, pressScaleX],
+    ([x, scaleX]) => {
+      const currentWidth = 71 * (scaleX as number);
+      const offset = (currentWidth - 71) / 2;
+      const newX = (x as number) - offset;
+      return `inset(5px calc(100% - (${newX}px + ${currentWidth}px)) 5px ${newX}px round 9999px)`;
+    }
   );
 
   const isDragging = useRef(false);
@@ -98,7 +103,7 @@ export const LiquidGlassIsland: React.FC<LiquidGlassIslandProps> = ({
     onChangeTab(tabId);
   };
 
-  const handleDropletPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+  const handleDropletPointerDown = (e: React.PointerEvent<Element>) => {
     if (e.button !== 0) return; // only left click / primary touch
     isDragging.current = true;
     pointerStartRef.current = e.clientX;
@@ -113,7 +118,7 @@ export const LiquidGlassIsland: React.FC<LiquidGlassIslandProps> = ({
     }
   };
 
-  const handleDropletPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+  const handleDropletPointerMove = (e: React.PointerEvent<Element>) => {
     if (!isDragging.current) return;
 
     const deltaX = e.clientX - pointerStartRef.current;
@@ -131,9 +136,10 @@ export const LiquidGlassIsland: React.FC<LiquidGlassIslandProps> = ({
     }
 
     blobTargetX.set(constrainedX);
+    animatedX.set(constrainedX); // Immediate update for drag responsiveness
   };
 
-  const handleDropletPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+  const handleDropletPointerUp = (e: React.PointerEvent<Element>) => {
     if (!isDragging.current) return;
     isDragging.current = false;
 
@@ -190,49 +196,61 @@ export const LiquidGlassIsland: React.FC<LiquidGlassIslandProps> = ({
           }}
           className="relative pointer-events-auto flex items-center justify-between px-1.5 select-none mx-auto"
         >
-          {/* Liquid Droplet Indicator (Droplet Swell & Slide) */}
-          <motion.div
-            onPointerDown={handleDropletPointerDown}
-            onPointerMove={handleDropletPointerMove}
-            onPointerUp={handleDropletPointerUp}
-            onPointerCancel={handleDropletPointerUp}
-            style={{
-              x: animatedX,
-              scaleX: pressScaleX,
-              scaleY: pressScaleY,
-              width: 71,
-              height: 54,
-              borderRadius: 9999,
-              background:
-                'radial-gradient(ellipse at 50% 20%, rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, 0.02) 65%, rgba(255, 255, 255, 0.05) 100%)',
-              backdropFilter: 'blur(0px) saturate(50%) contrast(50%)',
-              WebkitBackdropFilter: 'blur(0px) saturate(50%) contrast(50%)',
-              boxShadow:
-                'inset 0 1px 1.5px rgba(255, 255, 255, 0), inset 1.1px -1.1px 0px 0px rgba(255, 255, 255, 0.48), inset 1.6px -1.6px 0px rgba(255, 255, 255, 0.216)',
-              top: '5px',
-            }}
-            className="absolute left-0 pointer-events-auto z-0 border border-white/20 cursor-grab active:cursor-grabbing touch-none"
-          />
+          {/* Droplet Positioning Wrapper matching Layer 1 & 2 px-1.5 */}
+          <div className="absolute inset-0 px-1.5 flex items-center pointer-events-none z-0">
+            {/* Liquid Droplet Indicator (Droplet Swell & Slide) */}
+            <motion.div
+              onPointerDown={handleDropletPointerDown}
+              onPointerMove={handleDropletPointerMove}
+              onPointerUp={handleDropletPointerUp}
+              onPointerCancel={handleDropletPointerUp}
+              style={{
+                x: animatedX,
+                scaleX: pressScaleX,
+                scaleY: pressScaleY,
+                width: 71,
+                height: 54,
+                borderRadius: 9999,
+                background:
+                  'radial-gradient(ellipse at 50% 20%, rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, 0.02) 65%, rgba(255, 255, 255, 0.05) 100%)',
+                backdropFilter: 'blur(0px) saturate(50%) contrast(50%)',
+                WebkitBackdropFilter: 'blur(0px) saturate(50%) contrast(50%)',
+                boxShadow:
+                  'inset 0 1px 1.5px rgba(255, 255, 255, 0), inset 1.1px -1.1px 0px 0px rgba(255, 255, 255, 0.48), inset 1.6px -1.6px 0px rgba(255, 255, 255, 0.216)',
+              }}
+              className="absolute left-0 pointer-events-auto z-0 border border-[#e06b3a]/40 cursor-grab active:cursor-grabbing touch-none"
+            />
+          </div>
 
           {/* LAYER 1: Inactive Icons Base (#737373) */}
-          <div className="w-full h-full flex items-center justify-around relative z-10">
+          <div className="absolute inset-0 flex items-center justify-around z-10 px-1.5">
             {TABS.map((tab, idx) => {
               const IconComp = tab.icon;
               return (
                 <button
                   key={tab.id}
                   type="button"
-                  onPointerDown={() => handlePointerDown(idx)}
-                  onPointerUp={handlePointerUp}
-                  onPointerLeave={handlePointerUp}
+                  onPointerDown={(e) => {
+                    handlePointerDown(idx);
+                    handleDropletPointerDown(e as any);
+                  }}
+                  onPointerMove={handleDropletPointerMove}
+                  onPointerUp={(e) => {
+                    handlePointerUp();
+                    handleDropletPointerUp(e as any);
+                  }}
+                  onPointerCancel={(e) => {
+                    handlePointerUp();
+                    handleDropletPointerUp(e as any);
+                  }}
                   onClick={() => handleTabClick(tab.id, idx)}
                   style={{
                     width: '25%',
                     height: 64,
                   }}
-                  className="flex flex-col items-center justify-center text-[#737373] transition-colors hover:text-zinc-300 focus:outline-none cursor-pointer"
+                  className="flex flex-col items-center justify-center text-[#71717a] transition-colors hover:text-zinc-300 focus:outline-none cursor-grab active:cursor-grabbing touch-none"
                 >
-                  <IconComp size={24} stroke="#737373" strokeWidth={2.5} className="floating-icon-inactive" />
+                  <IconComp size={24} stroke="#71717a" strokeWidth={2.5} className="floating-icon-inactive" />
                 </button>
               );
             })}
@@ -244,21 +262,18 @@ export const LiquidGlassIsland: React.FC<LiquidGlassIslandProps> = ({
               clipPath: clipPathStyle,
               height: 64,
             }}
-            className="absolute inset-x-0 top-0 px-1.5 z-20 pointer-events-none flex items-center justify-around bg-transparent"
+            className="absolute inset-0 flex items-center justify-around z-20 pointer-events-none px-1.5"
           >
             {TABS.map((tab) => {
               const IconComp = tab.icon;
               return (
-                <button
+                <div
                   key={tab.id}
-                  type="button"
-                  tabIndex={-1}
-                  disabled
                   style={{
                     width: '25%',
                     height: 64,
                   }}
-                  className="flex-1 h-full flex flex-col items-center justify-center focus:outline-none disabled:opacity-100"
+                  className="flex-1 h-full flex flex-col items-center justify-center"
                 >
                   <IconComp 
                     size={24} 
@@ -266,7 +281,7 @@ export const LiquidGlassIsland: React.FC<LiquidGlassIslandProps> = ({
                     strokeWidth={2.5} 
                     style={{ filter: 'drop-shadow(0 2px 8px rgba(224, 107, 58, 0.45))' }}
                   />
-                </button>
+                </div>
               );
             })}
           </motion.div>

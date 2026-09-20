@@ -165,8 +165,8 @@ export const UrlInputCard: React.FC<UrlInputCardProps> = ({
       {/* Brand & Subtitle (Matches User Mockup Exactly) */}
       <div className="pt-2 text-left">
         <h1 className="text-3xl sm:text-4xl font-serif-logo font-bold tracking-tight leading-none text-zinc-100 flex items-center">
-          <span>Comic</span>
-          <span className="italic text-[#e06b3a] ml-0.5">Trans</span>
+          <span>Ri</span>
+          <span className="italic text-[#e06b3a] ml-0.5">Xia</span>
         </h1>
         <p className="text-[10px] sm:text-[11px] font-semibold tracking-[0.2em] text-zinc-500 uppercase mt-2">
           DỊCH VÀ ĐỌC TRUYỆN THEO CÁCH CỦA BẠN.

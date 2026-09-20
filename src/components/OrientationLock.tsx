@@ -57,7 +57,7 @@ export const OrientationLock: React.FC = () => {
         Vui lòng xoay dọc điện thoại
       </h2>
       <p className="text-xs text-zinc-400 max-w-xs leading-relaxed mb-4">
-        <span className="text-zinc-200 font-semibold">ComicTrans</span> được tối ưu hóa chuyên biệt cho màn hình dọc di động. Hãy giữ điện thoại thẳng đứng để tiếp tục đọc truyện.
+        <span className="text-zinc-200 font-semibold">RiXia</span> được tối ưu hóa chuyên biệt cho màn hình dọc di động. Hãy giữ điện thoại thẳng đứng để tiếp tục đọc truyện.
       </p>
 
       <div className="px-3 py-1.5 rounded-full bg-zinc-900 border border-zinc-800 text-[11px] text-zinc-400">

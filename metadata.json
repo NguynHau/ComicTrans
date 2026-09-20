@@ -1,5 +1,5 @@
 {
-  "name": "ComicTrans",
+  "name": "RiXia",
   "description": "Ứng dụng dịch truyện tranh manga, manhwa, manhua thông minh theo cách của bạn trên điện thoại di động",
   "requestFramePermissions": ["camera"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]

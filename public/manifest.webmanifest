@@ -1,7 +1,7 @@
 {
   "id": "/",
-  "name": "Manga Translator PWA",
-  "short_name": "MangaTrans",
+  "name": "RiXia",
+  "short_name": "RiXia",
   "description": "Dịch manga/manhwa/manhua từ URL với OCR, inpainting và typesetting tự động.",
   "start_url": "/",
   "scope": "/",
@@ -10,6 +10,12 @@
   "background_color": "#020617",
   "theme_color": "#0f172a",
   "icons": [
+    {
+      "src": "https://res.cloudinary.com/zaowbcqq/image/upload/v1789926223/ChatGPT_Image_00_43_09_21_thg_9_2026_vduvzv.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
     {
       "src": "/pwa-192x192.png",
       "sizes": "192x192",
