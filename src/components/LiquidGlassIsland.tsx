@@ -103,11 +103,24 @@ export const LiquidGlassIsland: React.FC<LiquidGlassIslandProps> = ({
     onChangeTab(tabId);
   };
 
-  const handleDropletPointerDown = (e: React.PointerEvent<Element>) => {
+  const handleContainerPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (e.button !== 0) return; // only left click / primary touch
+    if (!containerRef.current) return;
+
+    const rect = containerRef.current.getBoundingClientRect();
+    const paddingLeft = 6; // px-1.5 = 6px
+    const localX = e.clientX - rect.left - paddingLeft;
+    const targetX = localX - 35.5; // 35.5 is half of droplet width (71)
+
+    const { min, max } = getBounds();
+    let constrainedX = Math.max(min, Math.min(max, targetX));
+
     isDragging.current = true;
     pointerStartRef.current = e.clientX;
-    xStartRef.current = blobTargetX.get();
+    xStartRef.current = constrainedX;
+
+    blobTargetX.set(constrainedX);
+    animatedX.set(constrainedX);
 
     // SWELL scales when grabbed
     pressTargetScaleX.set(1.35);
@@ -144,7 +157,11 @@ export const LiquidGlassIsland: React.FC<LiquidGlassIslandProps> = ({
     isDragging.current = false;
 
     if (e.currentTarget) {
-      e.currentTarget.releasePointerCapture(e.pointerId);
+      try {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      } catch (err) {
+        // ignore if capture lost
+      }
     }
 
     pressTargetScaleX.set(1);
@@ -181,6 +198,10 @@ export const LiquidGlassIsland: React.FC<LiquidGlassIslandProps> = ({
         {/* Liquid Glass Island Base Container */}
         <div
           ref={containerRef}
+          onPointerDown={handleContainerPointerDown}
+          onPointerMove={handleDropletPointerMove}
+          onPointerUp={handleDropletPointerUp}
+          onPointerCancel={handleDropletPointerUp}
           style={{
             width: '100%',
             minWidth: 280,
@@ -194,16 +215,12 @@ export const LiquidGlassIsland: React.FC<LiquidGlassIslandProps> = ({
             boxShadow:
               '0px -30px 0px 0px rgba(0, 0, 0, 0), inset 0 1px 1px rgba(255, 255, 255, 0)',
           }}
-          className="relative pointer-events-auto flex items-center justify-between px-1.5 select-none mx-auto"
+          className="relative pointer-events-auto flex items-center justify-between px-1.5 select-none mx-auto cursor-grab active:cursor-grabbing touch-none"
         >
           {/* Droplet Positioning Wrapper matching Layer 1 & 2 px-1.5 */}
           <div className="absolute inset-0 px-1.5 flex items-center pointer-events-none z-0">
             {/* Liquid Droplet Indicator (Droplet Swell & Slide) */}
             <motion.div
-              onPointerDown={handleDropletPointerDown}
-              onPointerMove={handleDropletPointerMove}
-              onPointerUp={handleDropletPointerUp}
-              onPointerCancel={handleDropletPointerUp}
               style={{
                 x: animatedX,
                 scaleX: pressScaleX,
@@ -218,40 +235,25 @@ export const LiquidGlassIsland: React.FC<LiquidGlassIslandProps> = ({
                 boxShadow:
                   'inset 0 1px 1.5px rgba(255, 255, 255, 0), inset 1.1px -1.1px 0px 0px rgba(255, 255, 255, 0.48), inset 1.6px -1.6px 0px rgba(255, 255, 255, 0.216)',
               }}
-              className="absolute left-0 pointer-events-auto z-0 border border-[#e06b3a]/40 cursor-grab active:cursor-grabbing touch-none"
+              className="absolute left-0 pointer-events-none z-0 border border-[#e06b3a]/40"
             />
           </div>
 
-          {/* LAYER 1: Inactive Icons Base (#737373) */}
-          <div className="absolute inset-0 flex items-center justify-around z-10 px-1.5">
-            {TABS.map((tab, idx) => {
+          {/* LAYER 1: Inactive Icons Base (#71717a - zinc-500) */}
+          <div className="absolute inset-0 flex items-center justify-around z-10 px-1.5 pointer-events-none">
+            {TABS.map((tab) => {
               const IconComp = tab.icon;
               return (
-                <button
+                <div
                   key={tab.id}
-                  type="button"
-                  onPointerDown={(e) => {
-                    handlePointerDown(idx);
-                    handleDropletPointerDown(e as any);
-                  }}
-                  onPointerMove={handleDropletPointerMove}
-                  onPointerUp={(e) => {
-                    handlePointerUp();
-                    handleDropletPointerUp(e as any);
-                  }}
-                  onPointerCancel={(e) => {
-                    handlePointerUp();
-                    handleDropletPointerUp(e as any);
-                  }}
-                  onClick={() => handleTabClick(tab.id, idx)}
                   style={{
                     width: '25%',
                     height: 64,
                   }}
-                  className="flex flex-col items-center justify-center text-[#71717a] transition-colors hover:text-zinc-300 focus:outline-none cursor-grab active:cursor-grabbing touch-none"
+                  className="flex flex-col items-center justify-center text-[#71717a]"
                 >
                   <IconComp size={24} stroke="#71717a" strokeWidth={2.5} className="floating-icon-inactive" />
-                </button>
+                </div>
               );
             })}
           </div>
