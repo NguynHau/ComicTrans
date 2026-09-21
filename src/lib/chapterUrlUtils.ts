@@ -21,8 +21,8 @@ export function analyzeChapterUrl(rawUrl: string): ChapterUrlAnalysis {
     seriesName: 'Bộ truyện mới',
     currentChapterNumber: 1,
     nextChapterNumber: 2,
-    currentChapterTitle: 'Chương 1',
-    nextChapterTitle: 'Chương 2',
+    currentChapterTitle: 'Chap 1',
+    nextChapterTitle: 'Chap 2',
     nextUrl: null,
     patternDescription: 'Không phát hiện quy luật số chương tự động',
   };
@@ -63,8 +63,8 @@ export function analyzeChapterUrl(rawUrl: string): ChapterUrlAnalysis {
         seriesName,
         currentChapterNumber: num,
         nextChapterNumber: nextNum,
-        currentChapterTitle: `Chương ${num}`,
-        nextChapterTitle: `Chương ${nextNum}`,
+        currentChapterTitle: `Chap ${num}`,
+        nextChapterTitle: `Chap ${nextNum}`,
         nextUrl: nextParsed.toString(),
         patternDescription: `Tham số URL: ?${param}=${val} → ?${param}=${nextVal}`,
       };
@@ -108,8 +108,8 @@ export function analyzeChapterUrl(rawUrl: string): ChapterUrlAnalysis {
       seriesName,
       currentChapterNumber: num,
       nextChapterNumber: nextNum,
-      currentChapterTitle: `Chương ${num}`,
-      nextChapterTitle: `Chương ${nextNum}`,
+      currentChapterTitle: `Chap ${num}`,
+      nextChapterTitle: `Chap ${nextNum}`,
       nextUrl: nextParsed.toString(),
       patternDescription: `${prefix}${numStr} → ${prefix}${nextNumStr}`,
     };
@@ -147,8 +147,8 @@ export function analyzeChapterUrl(rawUrl: string): ChapterUrlAnalysis {
         seriesName,
         currentChapterNumber: num,
         nextChapterNumber: nextNum,
-        currentChapterTitle: `Chương ${num}`,
-        nextChapterTitle: `Chương ${nextNum}`,
+        currentChapterTitle: `Chap ${num}`,
+        nextChapterTitle: `Chap ${nextNum}`,
         nextUrl: nextParsed.toString(),
         patternDescription: `Số thứ tự: /${numStr}/ → /${nextNumStr}/`,
       };
@@ -159,6 +159,36 @@ export function analyzeChapterUrl(rawUrl: string): ChapterUrlAnalysis {
     ...fallbackResult,
     seriesName,
   };
+}
+
+/**
+ * Extracts a clean series base URL (e.g. https://rubycomics.net/manga/selena/ from https://rubycomics.net/manga/selena/chapter-0/)
+ */
+export function extractSeriesBaseUrl(rawUrl: string): string {
+  if (!rawUrl || !rawUrl.trim()) return '';
+  try {
+    const parsed = new URL(rawUrl.trim());
+    const pathname = parsed.pathname;
+    const cleanPath = pathname
+      .replace(/\/((?:chapter|chap|chuong|ch|episode|ep|tap|c)[_\-]?\d+(?:\.\d+)?|\d+(?:\.\d+)?)\/?$/i, '/')
+      .replace(/\/+/g, '/');
+    return `${parsed.origin}${cleanPath}`;
+  } catch {
+    return rawUrl.trim();
+  }
+}
+
+/**
+ * Normalizes chapter title like "Chương 1", "Chap 01", "chap 1" -> "chap 1" for strict comparison
+ */
+export function normalizeChapterTitle(title: string): string {
+  if (!title) return '';
+  const match = title.match(/(?:chap(?:ter)?|chương|ch|c|vol|tập)?\s*(\d+(?:\.\d+)?)/i);
+  if (match) {
+    const num = parseFloat(match[1]);
+    return `chap ${num}`;
+  }
+  return title.trim().toLowerCase();
 }
 
 /**

@@ -231,15 +231,30 @@ export async function getFoldersFromStorage(): Promise<MangaFolder[]> {
 }
 
 /**
- * Finds an existing folder by series name (case-insensitive) or creates a new one.
+ * Finds an existing folder by series name (case-insensitive) or series URL, or creates a new one.
  */
-export async function findOrCreateFolderForSeries(seriesName: string): Promise<MangaFolder> {
+export async function findOrCreateFolderForSeries(
+  seriesName: string,
+  seriesUrl?: string
+): Promise<MangaFolder> {
   const cleanName = (seriesName || 'Bộ truyện mới').trim();
+  const cleanUrl = seriesUrl ? seriesUrl.trim().toLowerCase().replace(/\/$/, '') : '';
   const folders = await getFoldersFromStorage();
-  const existing = folders.find(
-    (f) => f.name.trim().toLowerCase() === cleanName.toLowerCase()
-  );
+
+  const existing = folders.find((f) => {
+    const nameMatch = f.name.trim().toLowerCase() === cleanName.toLowerCase();
+    const urlMatch =
+      cleanUrl && f.seriesUrl
+        ? f.seriesUrl.trim().toLowerCase().replace(/\/$/, '') === cleanUrl
+        : false;
+    return nameMatch || urlMatch;
+  });
+
   if (existing) {
+    if (seriesUrl && (!existing.seriesUrl || existing.seriesUrl !== seriesUrl)) {
+      existing.seriesUrl = seriesUrl;
+      await saveFoldersToStorage(folders);
+    }
     return existing;
   }
 
@@ -247,6 +262,7 @@ export async function findOrCreateFolderForSeries(seriesName: string): Promise<M
     id: 'folder_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
     name: cleanName,
     createdAt: new Date().toISOString(),
+    seriesUrl: seriesUrl || undefined,
   };
 
   const updatedFolders = [newFolder, ...folders];

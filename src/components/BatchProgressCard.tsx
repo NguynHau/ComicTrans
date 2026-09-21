@@ -41,9 +41,7 @@ export const BatchProgressCard: React.FC<BatchProgressCardProps> = ({
   const isStopped = session.status === 'stopped';
 
   const completedChaptersCount = session.completedChapters.length;
-  const currentChapterTitle = activeJob?.source_url
-    ? `Chương ${session.currentChapterNumber}`
-    : `Chương ${session.currentChapterNumber}`;
+  const currentChapterTitle = `Chap ${session.currentChapterNumber}`;
 
   const currentPercentage =
     activeJob && activeJob.total_pages > 0

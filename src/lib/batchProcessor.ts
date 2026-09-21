@@ -13,7 +13,12 @@ import {
   getCachedPageTranslation,
   saveCachedPageTranslation,
 } from './storage';
-import { analyzeChapterUrl } from './chapterUrlUtils';
+import {
+  analyzeChapterUrl,
+  extractSeriesBaseUrl,
+  normalizeChapterTitle,
+} from './chapterUrlUtils';
+import { extractChapterNumber } from './chapterSort';
 import { classifyPipelineError } from './errorUtils';
 import {
   MangaJob,
@@ -36,7 +41,8 @@ export interface BatchCallbacks {
 
 /**
  * Executes a full multi-chapter batch translation loop:
- * Fetches chapter -> OCR & Translation -> Inpainting -> Saves to Folder -> Advances to next chapter.
+ * Auto-detects series, checks existing chapters in IndexedDB, resumes incomplete chapters first,
+ * skips finished chapters, uses strict "Chap X" naming, and preserves exact source URLs.
  */
 export async function runBatchTranslationLoop(
   initialUrl: string,
@@ -48,11 +54,28 @@ export async function runBatchTranslationLoop(
 ): Promise<BatchTranslationSession> {
   const analysis = analyzeChapterUrl(initialUrl);
   const seriesName = analysis.seriesName || 'Bộ truyện mới';
+  const seriesBaseUrl = extractSeriesBaseUrl(initialUrl);
 
   // 1. Find or create the manga folder for this series
-  const folder = await findOrCreateFolderForSeries(seriesName);
+  const folder = await findOrCreateFolderForSeries(seriesName, seriesBaseUrl);
 
-  // 2. Initialize or restore session
+  // 2. Query IndexedDB for existing saved chapters of this folder/series
+  const existingRecents = await getRecentItemsFromStorage();
+  const folderChapters = existingRecents.filter(
+    (r) =>
+      r.folderId === folder.id ||
+      (r.folderName && r.folderName.trim().toLowerCase() === seriesName.trim().toLowerCase())
+  );
+
+  const completedInStorage = folderChapters.filter(
+    (r) => r.completedPages > 0 && r.completedPages === r.totalPages && r.job?.status !== 'failed'
+  );
+
+  const incompleteInStorage = folderChapters.filter(
+    (r) => r.completedPages < r.totalPages || r.completedPages === 0 || r.job?.status === 'failed'
+  );
+
+  // 3. Initialize or restore session
   const sessionId = existingSession ? existingSession.id : 'batch_' + Date.now();
   let session: BatchTranslationSession = existingSession
     ? {
@@ -63,17 +86,25 @@ export async function runBatchTranslationLoop(
     : {
         id: sessionId,
         seriesName,
+        seriesBaseUrl,
         folderId: folder.id,
         sourceLang,
         targetLang,
         initialUrl: initialUrl.trim(),
         currentUrl: initialUrl.trim(),
         currentChapterNumber: analysis.currentChapterNumber,
-        completedChapters: [],
+        completedChapters: completedInStorage.map((c) => ({
+          chapterNumber: extractChapterNumber(c.title),
+          title: c.title.replace(/^Chương\s+/i, 'Chap '),
+          url: c.sourceUrl || initialUrl,
+          pageCount: c.completedPages,
+          completedAt: c.timestamp,
+          recentItemId: c.id,
+        })),
         status: 'running',
         consecutiveErrors: 0,
         lastUpdated: new Date().toISOString(),
-        maxChapters: 100, // Safe upper limit
+        maxChapters: 100, // Upper limit
       };
 
   callbacks.onSessionUpdate({ ...session });
@@ -83,6 +114,20 @@ export async function runBatchTranslationLoop(
   let currentChapterNum = session.currentChapterNumber;
   let loopCount = 0;
   const MAX_CHAPTERS = session.maxChapters || 100;
+
+  // 4. Prioritize processing any incomplete or failed chapter in IndexedDB first
+  if (incompleteInStorage.length > 0) {
+    const firstIncomplete = incompleteInStorage[0];
+    if (firstIncomplete.sourceUrl) {
+      currentUrl = firstIncomplete.sourceUrl;
+      currentChapterNum = extractChapterNumber(firstIncomplete.title);
+      session.currentUrl = currentUrl;
+      session.currentChapterNumber = currentChapterNum;
+      console.log(
+        `📌 [RiXia Batch] Phát hiện chap chưa hoàn thành trong thư viện (${firstIncomplete.title}). Ưu tiên xử lý lại.`
+      );
+    }
+  }
 
   while (loopCount < MAX_CHAPTERS) {
     if (callbacks.shouldAbort()) {
@@ -94,34 +139,38 @@ export async function runBatchTranslationLoop(
 
     loopCount++;
     const currentAnalysis = analyzeChapterUrl(currentUrl);
-    const chapterTitle = currentAnalysis.currentChapterTitle || `Chương ${currentChapterNum}`;
+    const chapterNum = currentAnalysis.currentChapterNumber ?? currentChapterNum;
+    const chapterTitle = `Chap ${chapterNum}`;
 
     console.log(`🚀 [RiXia Batch] Bắt đầu xử lý: ${seriesName} - ${chapterTitle} (${currentUrl})`);
 
-    // Step A: Check if this chapter was already completed before
-    const existingRecents = await getRecentItemsFromStorage();
-    const alreadySaved = existingRecents.find(
+    // Step A: Check if this chapter is ALREADY completed in IndexedDB
+    const latestRecents = await getRecentItemsFromStorage();
+    const alreadySaved = latestRecents.find(
       (r) =>
-        r.sourceUrl === currentUrl ||
-        (r.folderId === folder.id && r.title.toLowerCase() === chapterTitle.toLowerCase())
+        (r.folderId === folder.id || r.folderName?.toLowerCase() === seriesName.toLowerCase()) &&
+        (r.sourceUrl === currentUrl || normalizeChapterTitle(r.title) === normalizeChapterTitle(chapterTitle)) &&
+        r.completedPages > 0 &&
+        r.completedPages === r.totalPages &&
+        r.job?.status !== 'failed'
     );
 
-    if (alreadySaved && alreadySaved.completedPages > 0) {
-      console.log(`⏩ [RiXia Batch] Chương ${chapterTitle} đã dịch trước đó trong bộ nhớ. Bỏ qua tải lại.`);
+    if (alreadySaved) {
+      console.log(`⏩ [RiXia Batch] ${chapterTitle} đã dịch hoàn tất trước đó. Tự động chuyển tới chap tiếp theo...`);
       const summary: BatchChapterSummary = {
-        chapterNumber: currentChapterNum,
-        title: alreadySaved.title,
+        chapterNumber: chapterNum,
+        title: chapterTitle,
         url: currentUrl,
         pageCount: alreadySaved.totalPages,
         completedAt: new Date().toISOString(),
         recentItemId: alreadySaved.id,
       };
 
-      if (!session.completedChapters.some((c) => c.url === currentUrl)) {
+      if (!session.completedChapters.some((c) => c.url === currentUrl || c.title === chapterTitle)) {
         session.completedChapters = [...session.completedChapters, summary];
       }
 
-      // Check next chapter
+      // Check next chapter URL
       if (currentAnalysis.isRecognized && currentAnalysis.nextUrl) {
         currentUrl = currentAnalysis.nextUrl;
         currentChapterNum = currentAnalysis.nextChapterNumber;
@@ -131,6 +180,7 @@ export async function runBatchTranslationLoop(
         await saveBatchSession(session);
         continue;
       } else {
+        console.log(`🎉 [RiXia Batch] Bộ truyện ${seriesName} đã hoàn thành! Tất cả các chap đã có trong thư viện.`);
         session.status = 'completed';
         session.lastUpdated = new Date().toISOString();
         callbacks.onSessionUpdate({ ...session });
@@ -140,7 +190,7 @@ export async function runBatchTranslationLoop(
       }
     }
 
-    // Step B: Scrape images for current chapter with bounded retry mechanism (2-3 retries)
+    // Step B: Scrape images for current chapter
     let resolvedImages: string[] = [];
     let scrapeRetryCount = 0;
     const MAX_SCRAPE_RETRIES = 2;
@@ -160,13 +210,13 @@ export async function runBatchTranslationLoop(
           resolvedImages = scrapeResult.images;
           break;
         } else {
-          throw new Error('NO_IMAGES_FOUND: Không tìm thấy ảnh truyện trong chương này.');
+          throw new Error('NO_IMAGES_FOUND: Không tìm thấy ảnh truyện trong chap này.');
         }
       } catch (err: any) {
         scrapeError = err;
         scrapeRetryCount++;
         if (scrapeRetryCount <= MAX_SCRAPE_RETRIES) {
-          console.warn(`⚠️ [RiXia Batch] Thử tải lại ảnh chương (${scrapeRetryCount}/${MAX_SCRAPE_RETRIES}) sau 2s...`);
+          console.warn(`⚠️ [RiXia Batch] Thử tải lại ảnh chap (${scrapeRetryCount}/${MAX_SCRAPE_RETRIES}) sau 2s...`);
           await new Promise((r) => setTimeout(r, 2000));
         }
       }
@@ -181,7 +231,7 @@ export async function runBatchTranslationLoop(
 
       if (isEndOrNotFound && session.completedChapters.length > 0) {
         // We reached the end of the comic series!
-        console.log(`🏁 [RiXia Batch] Đã hết các chương truyện hoặc không tìm thấy chương mới. Hoàn tất dịch toàn bộ!`);
+        console.log(`🏁 [RiXia Batch] Đã hết các chap truyện hoặc không tìm thấy chap mới. Hoàn tất dịch toàn bộ!`);
         session = {
           ...session,
           status: 'completed',
@@ -192,7 +242,7 @@ export async function runBatchTranslationLoop(
         callbacks.onBatchFinished(session);
         return session;
       } else {
-        const classified = classifyPipelineError(scrapeError || new Error('Không thể tải ảnh chương'));
+        const classified = classifyPipelineError(scrapeError || new Error('Không thể tải ảnh chap'));
         session = {
           ...session,
           status: 'failed',
@@ -403,7 +453,7 @@ export async function runBatchTranslationLoop(
       await saveRecentItemToStorage(recentItem);
 
       const summary: BatchChapterSummary = {
-        chapterNumber: currentChapterNum,
+        chapterNumber: chapterNum,
         title: chapterTitle,
         url: currentUrl,
         pageCount: completedCount,
@@ -422,7 +472,7 @@ export async function runBatchTranslationLoop(
       session.consecutiveErrors = (session.consecutiveErrors || 0) + 1;
       if (session.consecutiveErrors >= 2) {
         session.status = 'failed';
-        session.errorMessage = `Không thể hoàn tất dịch chương ${chapterTitle}.`;
+        session.errorMessage = `Không thể hoàn tất dịch ${chapterTitle}.`;
         callbacks.onSessionUpdate({ ...session });
         await saveBatchSession(session);
         return session;
@@ -441,8 +491,7 @@ export async function runBatchTranslationLoop(
       // Polite pause between chapters (800ms)
       await new Promise((r) => setTimeout(r, 800));
     } else {
-      // URL does not follow simple sequential rules
-      console.log(`ℹ️ [RiXia Batch] URL tiếp theo không theo quy luật tăng số đơn giản. Tạm dừng để người dùng tiếp tục thủ công.`);
+      console.log(`ℹ️ [RiXia Batch] URL tiếp theo không theo quy luật tăng số đơn giản. Tạm dừng tiến trình batch.`);
       session.status = 'completed';
       session.lastUpdated = new Date().toISOString();
       callbacks.onSessionUpdate({ ...session });

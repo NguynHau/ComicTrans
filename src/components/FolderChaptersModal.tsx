@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Folder, BookOpen, Trash2, ArrowUpDown } from 'lucide-react';
+import { X, Folder, BookOpen, Trash2, ArrowUpDown, ExternalLink, Link2 } from 'lucide-react';
 import { RecentItem } from '../types';
 import { sortChapters } from '../lib/chapterSort';
 
@@ -22,6 +22,13 @@ export const FolderChaptersModal: React.FC<FolderChaptersModalProps> = ({
 
   const sortedChapters = sortChapters(chapters, sortOrder);
 
+  const handleOpenSourceUrl = (url: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (url && url.startsWith('http')) {
+      window.open(url, '_blank', 'noopener,noreferrer');
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-[180] bg-black/70 backdrop-blur-sm flex items-end justify-center animate-fadeIn">
       {/* Backdrop click to close */}
@@ -43,7 +50,7 @@ export const FolderChaptersModal: React.FC<FolderChaptersModalProps> = ({
                   {folderName}
                 </h3>
                 <p className="text-[11px] text-zinc-400 font-medium">
-                  {chapters.length} chương truyện đã lưu
+                  {chapters.length} chap truyện đã lưu
                 </p>
               </div>
             </div>
@@ -75,7 +82,7 @@ export const FolderChaptersModal: React.FC<FolderChaptersModalProps> = ({
             <div className="py-16 text-center space-y-2">
               <BookOpen className="w-8 h-8 text-zinc-600 mx-auto" />
               <p className="text-xs text-zinc-400 font-medium">
-                Chưa có chương truyện nào trong thư mục này.
+                Chưa có chap truyện nào trong thư mục này.
               </p>
             </div>
           ) : (
@@ -102,30 +109,65 @@ export const FolderChaptersModal: React.FC<FolderChaptersModalProps> = ({
                 </div>
 
                 {/* Chapter Metadata */}
-                <div className="flex-1 min-w-0 flex flex-col justify-between py-0.5">
-                  <div className="space-y-0.5">
-                    <h4 className="text-xs sm:text-sm font-bold text-zinc-200 truncate group-hover:text-[#e06b3a] transition-colors pr-7">
+                <div className="flex-1 min-w-0 flex flex-col justify-between py-0.5 pr-14">
+                  <div className="space-y-1">
+                    <h4 className="text-xs sm:text-sm font-bold text-zinc-200 truncate group-hover:text-[#e06b3a] transition-colors">
                       {item.title}
                     </h4>
-                    <p className="text-[10px] text-zinc-400">
-                      Đã dịch:{' '}
-                      <span className="text-emerald-400 font-semibold">
-                        {item.completedPages}/{item.totalPages} trang
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[10px] text-zinc-400">
+                        Đã dịch:{' '}
+                        <span className="text-emerald-400 font-semibold">
+                          {item.completedPages}/{item.totalPages} trang
+                        </span>
                       </span>
-                    </p>
+
+                      {/* Source URL display button */}
+                      {item.sourceUrl && item.sourceUrl.startsWith('http') ? (
+                        <button
+                          type="button"
+                          onClick={(e) => handleOpenSourceUrl(item.sourceUrl!, e)}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-zinc-800/90 hover:bg-orange-500/20 text-[10px] text-zinc-300 hover:text-orange-300 border border-zinc-700/60 hover:border-orange-500/40 transition-colors"
+                          title={`Mở link gốc: ${item.sourceUrl}`}
+                        >
+                          <ExternalLink className="w-3 h-3 text-[#e06b3a]" />
+                          <span>Link gốc</span>
+                        </button>
+                      ) : (
+                        <span
+                          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] bg-zinc-900 text-zinc-500 border border-zinc-800"
+                          title="Tệp tự tải lên hoặc chưa xác minh link web gốc"
+                        >
+                          <Link2 className="w-2.5 h-2.5" />
+                          <span>Tải lên</span>
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <p className="text-[10px] text-zinc-500 font-medium">{item.timestamp}</p>
                 </div>
 
-                {/* Delete Chapter Button */}
-                <button
-                  type="button"
-                  onClick={(e) => onDeleteChapter(item.id, e)}
-                  className="absolute top-3 right-3 p-1.5 rounded-lg text-zinc-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
-                  title="Xóa chương này"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
+                {/* Action Buttons: Open Link & Delete Chapter */}
+                <div className="absolute top-3 right-3 flex items-center gap-1">
+                  {item.sourceUrl && item.sourceUrl.startsWith('http') && (
+                    <button
+                      type="button"
+                      onClick={(e) => handleOpenSourceUrl(item.sourceUrl!, e)}
+                      className="p-1.5 rounded-lg text-zinc-400 hover:text-orange-400 hover:bg-orange-500/10 transition-colors"
+                      title="Mở trang gốc trên web"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={(e) => onDeleteChapter(item.id, e)}
+                    className="p-1.5 rounded-lg text-zinc-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
+                    title="Xóa chap này"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </div>
             ))
           )}

@@ -2,7 +2,7 @@ export function suggestMangaAndChapter(sourceUrl?: string) {
   if (!sourceUrl || sourceUrl.startsWith('upload://')) {
     return {
       mangaName: 'Truyện tải lên',
-      chapterName: 'Chương 1'
+      chapterName: 'Chap 1'
     };
   }
 
@@ -39,7 +39,7 @@ export function suggestMangaAndChapter(sourceUrl?: string) {
     };
 
     const formatChapter = (slug: string) => {
-      if (!slug) return 'Chương 1';
+      if (!slug) return 'Chap 1';
       const clean = slug.replace(/[-_]/g, ' ');
       // If it contains numbers, try to format nicely
       const match = clean.match(/(\d+(\.\d+)?)/);
@@ -56,7 +56,7 @@ export function suggestMangaAndChapter(sourceUrl?: string) {
   } catch (err) {
     return {
       mangaName: 'Bộ truyện mới',
-      chapterName: 'Chương 1'
+      chapterName: 'Chap 1'
     };
   }
 }

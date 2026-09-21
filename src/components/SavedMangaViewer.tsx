@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, ChevronLeft, ChevronRight, BookOpen } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, BookOpen, ExternalLink } from 'lucide-react';
 import { RecentItem } from '../types';
 import { sortChapters } from '../lib/chapterSort';
 
@@ -57,6 +57,12 @@ export const SavedMangaViewer: React.FC<SavedMangaViewerProps> = ({
     }
   };
 
+  const handleOpenSourceUrl = () => {
+    if (currentChapter.sourceUrl && currentChapter.sourceUrl.startsWith('http')) {
+      window.open(currentChapter.sourceUrl, '_blank', 'noopener,noreferrer');
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-[200] bg-black overflow-y-auto flex flex-col items-center animate-fadeIn">
       {/* Top Bar with Safe Area Top Padding to avoid phone notifications/notch */}
@@ -64,9 +70,21 @@ export const SavedMangaViewer: React.FC<SavedMangaViewerProps> = ({
         <div className="flex items-center gap-2.5 min-w-0 pr-2">
           <BookOpen className="w-4 h-4 text-[#e06b3a] flex-shrink-0" />
           <div className="min-w-0">
-            <h3 className="text-xs sm:text-sm font-extrabold text-zinc-100 truncate">
-              {currentChapter.title}
-            </h3>
+            <div className="flex items-center gap-2 truncate">
+              <h3 className="text-xs sm:text-sm font-extrabold text-zinc-100 truncate">
+                {currentChapter.title}
+              </h3>
+              {currentChapter.sourceUrl && currentChapter.sourceUrl.startsWith('http') && (
+                <button
+                  type="button"
+                  onClick={handleOpenSourceUrl}
+                  className="p-1 text-zinc-400 hover:text-orange-400 transition-colors flex-shrink-0"
+                  title={`Mở link gốc: ${currentChapter.sourceUrl}`}
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
             {currentChapter.folderName && (
               <p className="text-[10px] text-zinc-400 truncate">
                 {currentChapter.folderName}
