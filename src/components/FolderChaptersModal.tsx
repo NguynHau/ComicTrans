@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { X, Folder, BookOpen, Trash2, ArrowUpDown, ExternalLink, Link2 } from 'lucide-react';
+import { motion } from 'motion/react';
 import { RecentItem } from '../types';
 import { sortChapters } from '../lib/chapterSort';
 
@@ -9,6 +10,7 @@ interface FolderChaptersModalProps {
   onClose: () => void;
   onSelectChapter: (item: RecentItem) => void;
   onDeleteChapter: (id: string, e: React.MouseEvent) => void;
+  onMoveToFolder: (id: string, folderId: string) => void;
 }
 
 export const FolderChaptersModal: React.FC<FolderChaptersModalProps> = ({
@@ -17,6 +19,7 @@ export const FolderChaptersModal: React.FC<FolderChaptersModalProps> = ({
   onClose,
   onSelectChapter,
   onDeleteChapter,
+  onMoveToFolder,
 }) => {
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const [summary, setSummary] = useState<string | null>(null);
