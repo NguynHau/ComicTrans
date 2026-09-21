@@ -610,7 +610,7 @@ async function processMangaPage(
 
   // 2. Gemini OCR + Bubble Detection + Translation
   if (ai) {
-    const candidateModels = ['gemini-3.1-flash-lite', 'gemini-3.7-flash', 'gemini-flash-latest', 'gemini-3.8-flash'];
+    const candidateModels = ['gemini-3.1-flash-lite', 'gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.8-flash'];
     
     // Normalize image to high-quality JPEG for Gemini Vision
     let geminiBuffer = imageBuffer;
@@ -782,37 +782,47 @@ async function runJobWorker(jobId: string) {
     job.status = 'processing';
     job.updated_at = new Date().toISOString();
 
-    for (const page of job.pages) {
-      if ((job.status as string) === 'cancelled') break;
+    // Multi-worker concurrent execution (4 workers) for high performance translation
+    const CONCURRENCY_LIMIT = 4;
+    const queue = [...job.pages];
+    let nextIndex = 0;
 
-      job.current_page = page.page_number;
-      page.status = 'processing';
-      page.updated_at = new Date().toISOString();
+    const worker = async () => {
+      while (nextIndex < queue.length) {
+        if ((job.status as string) === 'cancelled') break;
+        const page = queue[nextIndex++];
+        if (!page) break;
 
-      try {
-        const result = await processMangaPage(
-          job,
-          page,
-          job.source_language,
-          job.target_language,
-          title
-        );
+        job.current_page = page.page_number;
+        page.status = 'processing';
+        page.updated_at = new Date().toISOString();
 
-        page.processed_image = result.processedUrl;
-        page.ocr_results = result.ocrResults;
-        page.translations = result.translations;
-        page.status = 'completed';
-        job.completed_pages += 1;
-      } catch (err: any) {
-        page.status = 'failed';
-        page.error_message = err.message || 'Lỗi xử lý trang';
+        try {
+          const result = await processMangaPage(
+            job,
+            page,
+            job.source_language,
+            job.target_language,
+            title
+          );
+
+          page.processed_image = result.processedUrl;
+          page.ocr_results = result.ocrResults;
+          page.translations = result.translations;
+          page.status = 'completed';
+          job.completed_pages += 1;
+        } catch (err: any) {
+          page.status = 'failed';
+          page.error_message = err.message || 'Lỗi xử lý trang';
+        }
+
+        page.updated_at = new Date().toISOString();
+        job.updated_at = new Date().toISOString();
       }
+    };
 
-      page.updated_at = new Date().toISOString();
-      job.updated_at = new Date().toISOString();
-
-      await new Promise((r) => setTimeout(r, 300));
-    }
+    const workerCount = Math.min(CONCURRENCY_LIMIT, job.pages.length);
+    await Promise.all(Array.from({ length: workerCount }, () => worker()));
 
     job.status = job.completed_pages > 0 ? 'completed' : 'failed';
     job.updated_at = new Date().toISOString();

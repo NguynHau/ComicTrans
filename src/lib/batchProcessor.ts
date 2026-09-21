@@ -332,8 +332,8 @@ export async function runBatchTranslationLoop(
 
     callbacks.onActiveJobUpdate({ ...chapterJob }, [...chapterPages]);
 
-    // Step D: Process chapter pages with optimal worker pool (Concurrency: 3) & IndexedDB Cache
-    const CONCURRENCY_LIMIT = 3;
+    // Step D: Process chapter pages with optimal worker pool (Concurrency: 4) & IndexedDB Cache
+    const CONCURRENCY_LIMIT = 4;
     let completedCount = 0;
     let isChapterAborted = false;
     let fatalError: DetailedError | null = null;

@@ -391,8 +391,8 @@ export function App() {
         total_pages: resolvedImages.length,
       });
 
-      // 4. Process pages concurrently with optimal worker pool (Concurrency: 3) & IndexedDB Cache
-      const CONCURRENCY_LIMIT = 3;
+      // 4. Process pages concurrently with optimal worker pool (Concurrency: 4) & IndexedDB Cache
+      const CONCURRENCY_LIMIT = 4;
       let completedCount = 0;
       let lastFailureError: DetailedError | null = null;
       let currentPagesArray = [...initialPages];

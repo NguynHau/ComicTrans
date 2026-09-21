@@ -513,14 +513,36 @@ export async function ensureImageAsJpegBase64(imageUrl: string): Promise<string>
 }
 
 // Available Gemini models ordered by priority with automatic fallback on quota/rate-limits
+// Note: gemini-1.5-flash and gemini-2.0-flash are permanently deprecated and return 404
 const CANDIDATE_GEMINI_MODELS = [
-  'gemini-1.5-flash',
-  'gemini-2.0-flash',
-  'gemini-3.6-flash',
   'gemini-3.1-flash-lite',
+  'gemini-3.6-flash',
   'gemini-3.5-flash',
   'gemini-3.8-flash',
 ];
+
+// In-memory & local-storage cache of verified working model to avoid redundant retries
+let cachedWorkingModel: string = (() => {
+  try {
+    return localStorage.getItem('RIXIA_WORKING_MODEL') || 'gemini-3.1-flash-lite';
+  } catch {
+    return 'gemini-3.1-flash-lite';
+  }
+})();
+
+function getOrderedCandidateModels(): string[] {
+  const primary = cachedWorkingModel && CANDIDATE_GEMINI_MODELS.includes(cachedWorkingModel)
+    ? cachedWorkingModel
+    : CANDIDATE_GEMINI_MODELS[0];
+  return [primary, ...CANDIDATE_GEMINI_MODELS.filter(m => m !== primary)];
+}
+
+function setWorkingModel(model: string) {
+  cachedWorkingModel = model;
+  try {
+    localStorage.setItem('RIXIA_WORKING_MODEL', model);
+  } catch {}
+}
 
 // Direct client-side Gemini Vision OCR & Translation API connector
 
@@ -644,19 +666,26 @@ ${JSON.stringify(items, null, 2)}`;
     }
   });
 
-  for (const model of CANDIDATE_GEMINI_MODELS) {
+  for (const model of getOrderedCandidateModels()) {
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${cleanApiKey}`;
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: requestBody,
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
       if (!res.ok) continue;
       const json = await res.json();
       const text = json?.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
       const parsed = JSON.parse(text);
-      if (Array.isArray(parsed)) return parsed;
+      if (Array.isArray(parsed)) {
+        setWorkingModel(model);
+        return parsed;
+      }
     } catch {
       // try next model
     }
@@ -750,8 +779,10 @@ Return a valid JSON array of all detected speech bubbles.`;
 
   let lastModelError: any = null;
 
-  // Multi-model fallback loop: tries models sequentially
-  for (const model of CANDIDATE_GEMINI_MODELS) {
+  // Multi-model fallback loop: tries models with dynamic prioritization & timeout protection
+  for (const model of getOrderedCandidateModels()) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 14000);
     try {
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${cleanApiKey}`;
       const response = await fetch(url, {
@@ -760,7 +791,9 @@ Return a valid JSON array of all detected speech bubbles.`;
           'Content-Type': 'application/json',
         },
         body: requestBody,
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -869,8 +902,15 @@ Return a valid JSON array of all detected speech bubbles.`;
         });
       });
 
+      setWorkingModel(model);
       return { ocr_results, translations, model_used: model, jpegBase64 };
     } catch (err: any) {
+      clearTimeout(timeoutId);
+      if (err.name === 'AbortError') {
+        console.warn(`[RiXia] Model ${model} phản hồi quá 14s. Tự động chuyển model tiếp theo...`);
+        lastModelError = new Error(`Model ${model} timed out`);
+        continue;
+      }
       if (
         err.message?.includes('API_KEY_INVALID') ||
         err.message?.includes('AI_SAFETY_BLOCKED') ||
