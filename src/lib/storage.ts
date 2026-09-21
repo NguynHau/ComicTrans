@@ -1,10 +1,11 @@
-import { RecentItem, MangaFolder, OCRBoxItem, TranslationItem } from '../types';
+import { RecentItem, MangaFolder, OCRBoxItem, TranslationItem, BatchTranslationSession } from '../types';
 
 const DB_NAME = 'ComicTranslatorDB';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const RECENTS_STORE = 'recents';
 const FOLDERS_STORE = 'folders';
 const PAGE_CACHE_STORE = 'page_cache';
+const BATCH_STORE = 'batch_sessions';
 
 export interface PageCacheData {
   cacheKey: string;
@@ -34,6 +35,9 @@ function openDB(): Promise<IDBDatabase> {
       }
       if (!db.objectStoreNames.contains(PAGE_CACHE_STORE)) {
         db.createObjectStore(PAGE_CACHE_STORE, { keyPath: 'cacheKey' });
+      }
+      if (!db.objectStoreNames.contains(BATCH_STORE)) {
+        db.createObjectStore(BATCH_STORE, { keyPath: 'id' });
       }
     };
     request.onsuccess = () => resolve(request.result);
@@ -223,5 +227,101 @@ export async function getFoldersFromStorage(): Promise<MangaFolder[]> {
   } catch (e) {
     const storedLS = localStorage.getItem('COMIC_TRANS_FOLDERS');
     return storedLS ? JSON.parse(storedLS) : [];
+  }
+}
+
+/**
+ * Finds an existing folder by series name (case-insensitive) or creates a new one.
+ */
+export async function findOrCreateFolderForSeries(seriesName: string): Promise<MangaFolder> {
+  const cleanName = (seriesName || 'Bộ truyện mới').trim();
+  const folders = await getFoldersFromStorage();
+  const existing = folders.find(
+    (f) => f.name.trim().toLowerCase() === cleanName.toLowerCase()
+  );
+  if (existing) {
+    return existing;
+  }
+
+  const newFolder: MangaFolder = {
+    id: 'folder_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
+    name: cleanName,
+    createdAt: new Date().toISOString(),
+  };
+
+  const updatedFolders = [newFolder, ...folders];
+  await saveFoldersToStorage(updatedFolders);
+  return newFolder;
+}
+
+export async function saveBatchSession(session: BatchTranslationSession): Promise<void> {
+  try {
+    const db = await openDB();
+    if (!db.objectStoreNames.contains(BATCH_STORE)) return;
+    const tx = db.transaction(BATCH_STORE, 'readwrite');
+    const store = tx.objectStore(BATCH_STORE);
+    await new Promise<void>((resolve, reject) => {
+      const req = store.put(session);
+      req.onsuccess = () => resolve();
+      req.onerror = () => reject(req.error);
+    });
+  } catch (e) {
+    console.warn('Failed to save batch session to IndexedDB:', e);
+  }
+  try {
+    localStorage.setItem('COMIC_TRANS_ACTIVE_BATCH', JSON.stringify(session));
+  } catch (e) {
+    // ignore
+  }
+}
+
+export async function getActiveBatchSession(): Promise<BatchTranslationSession | null> {
+  try {
+    const db = await openDB();
+    if (db.objectStoreNames.contains(BATCH_STORE)) {
+      const tx = db.transaction(BATCH_STORE, 'readonly');
+      const store = tx.objectStore(BATCH_STORE);
+      const all = await new Promise<BatchTranslationSession[]>((resolve, reject) => {
+        const req = store.getAll();
+        req.onsuccess = () => resolve(req.result || []);
+        req.onerror = () => reject(req.error);
+      });
+      const active = all.find((s) => s.status === 'running' || s.status === 'paused');
+      if (active) return active;
+    }
+  } catch (e) {
+    console.warn('Failed to get batch session from IndexedDB:', e);
+  }
+
+  try {
+    const storedLS = localStorage.getItem('COMIC_TRANS_ACTIVE_BATCH');
+    if (storedLS) {
+      return JSON.parse(storedLS);
+    }
+  } catch (e) {
+    // ignore
+  }
+  return null;
+}
+
+export async function deleteBatchSession(id: string): Promise<void> {
+  try {
+    const db = await openDB();
+    if (db.objectStoreNames.contains(BATCH_STORE)) {
+      const tx = db.transaction(BATCH_STORE, 'readwrite');
+      const store = tx.objectStore(BATCH_STORE);
+      await new Promise<void>((resolve, reject) => {
+        const req = store.delete(id);
+        req.onsuccess = () => resolve();
+        req.onerror = () => reject(req.error);
+      });
+    }
+  } catch (e) {
+    // ignore
+  }
+  try {
+    localStorage.removeItem('COMIC_TRANS_ACTIVE_BATCH');
+  } catch (e) {
+    // ignore
   }
 }

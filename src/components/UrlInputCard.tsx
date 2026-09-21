@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import {
   Globe,
   Clipboard,
@@ -16,12 +16,21 @@ import {
   AlertTriangle,
   Key,
   Lightbulb,
+  Layers,
+  ChevronRight,
 } from 'lucide-react';
 import JSZip from 'jszip';
 import { RecentItem, DetailedError } from '../types';
+import { analyzeChapterUrl } from '../lib/chapterUrlUtils';
 
 interface UrlInputCardProps {
-  onSubmit: (url: string, sourceLang: string, targetLang: string, images?: string[]) => Promise<void>;
+  onSubmit: (
+    url: string,
+    sourceLang: string,
+    targetLang: string,
+    images?: string[],
+    isBatchMode?: boolean
+  ) => Promise<void>;
   isLoading: boolean;
   errorMessage?: string | null;
   detailedError?: DetailedError | null;
@@ -69,14 +78,31 @@ export const UrlInputCard: React.FC<UrlInputCardProps> = ({
     }
   }, []);
 
-  const handlePaste = async () => {
+  const handlePaste = async (e?: React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
     try {
-      const text = await navigator.clipboard.readText();
-      if (text) {
-        setUrl(text.trim());
+      if (navigator.clipboard && typeof navigator.clipboard.readText === 'function') {
+        const text = await navigator.clipboard.readText();
+        if (text && text.trim()) {
+          setUrl(text.trim());
+          return;
+        }
       }
-    } catch {
-      // Fallback
+    } catch (err) {
+      console.warn('Direct clipboard read failed:', err);
+    }
+
+    const inputEl = document.getElementById('comic-url-input') as HTMLInputElement;
+    if (inputEl) {
+      inputEl.focus();
+      try {
+        document.execCommand('paste');
+      } catch {
+        // ignore
+      }
     }
   };
 
@@ -151,12 +177,23 @@ export const UrlInputCard: React.FC<UrlInputCardProps> = ({
     setRecents([]);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const urlAnalysis = useMemo(() => {
+    if (!url.trim() || !url.startsWith('http')) return null;
+    return analyzeChapterUrl(url.trim());
+  }, [url]);
+
+  const handleSubmitSingle = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     if (uploadedImages.length > 0) {
-      onSubmit('', sourceLang, targetLang, uploadedImages);
+      onSubmit('', sourceLang, targetLang, uploadedImages, false);
     } else if (url.trim()) {
-      onSubmit(url.trim(), sourceLang, targetLang);
+      onSubmit(url.trim(), sourceLang, targetLang, undefined, false);
+    }
+  };
+
+  const handleSubmitBatch = () => {
+    if (url.trim()) {
+      onSubmit(url.trim(), sourceLang, targetLang, undefined, true);
     }
   };
 
@@ -174,46 +211,94 @@ export const UrlInputCard: React.FC<UrlInputCardProps> = ({
       </div>
 
       {/* Pill Search / URL Input Field (Matches Mockup) */}
-      <form onSubmit={handleSubmit} className="relative">
-        <div className="relative flex items-center w-full bg-[#18181c]/90 hover:bg-[#1f1f24] border border-zinc-800 focus-within:border-zinc-600 rounded-full px-4 py-3 transition-all shadow-lg shadow-black/40">
-          <Globe className="w-4 h-4 text-zinc-400 flex-shrink-0 mr-3" />
-          <input
-            id="comic-url-input"
-            type="url"
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            placeholder="Dán liên kết truyện để dịch..."
-            className="w-full bg-transparent text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none pr-16"
-          />
-          {url ? (
-            <button
-              type="button"
-              onClick={() => setUrl('')}
-              className="text-zinc-500 hover:text-zinc-300 p-1 mr-1"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={handlePaste}
-              className="text-[11px] font-medium text-zinc-400 hover:text-orange-400 px-2 py-0.5 rounded-full bg-zinc-800/80 border border-zinc-700/50 transition-colors"
-              title="Dán từ khay nhớ tạm"
-            >
-              Dán
-            </button>
-          )}
-          {url.trim() && (
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="ml-2 w-7 h-7 rounded-full bg-[#e06b3a] hover:bg-orange-600 text-white flex items-center justify-center flex-shrink-0 transition-transform active:scale-95 shadow-md shadow-orange-600/30"
-            >
-              <ArrowRight className="w-3.5 h-3.5" />
-            </button>
-          )}
-        </div>
-      </form>
+      <div className="space-y-2.5">
+        <form onSubmit={handleSubmitSingle} className="relative">
+          <div className="relative flex items-center w-full bg-[#18181c]/90 hover:bg-[#1f1f24] border border-zinc-800 focus-within:border-zinc-600 rounded-full px-4 py-3 transition-all shadow-lg shadow-black/40">
+            <Globe className="w-4 h-4 text-zinc-400 flex-shrink-0 mr-3" />
+            <input
+              id="comic-url-input"
+              type="url"
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              placeholder="Dán liên kết truyện để dịch..."
+              className="w-full bg-transparent text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none pr-16"
+            />
+            {url ? (
+              <button
+                type="button"
+                onClick={() => setUrl('')}
+                className="text-zinc-500 hover:text-zinc-300 p-1 mr-1"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handlePaste}
+                className="text-[11px] font-medium text-zinc-400 hover:text-orange-400 px-2 py-0.5 rounded-full bg-zinc-800/80 border border-zinc-700/50 transition-colors"
+                title="Dán từ khay nhớ tạm"
+              >
+                Dán
+              </button>
+            )}
+          </div>
+        </form>
+
+        {/* Smart Chapter Detection Box & Action Buttons */}
+        {url.trim() && urlAnalysis && (
+          <div className="p-3 bg-[#141417] border border-zinc-800/90 rounded-2xl space-y-2.5 animate-fadeIn">
+            {urlAnalysis.isRecognized ? (
+              <>
+                <div className="flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-1.5 text-orange-300 font-semibold truncate">
+                    <Sparkles className="w-3.5 h-3.5 text-[#e06b3a] flex-shrink-0" />
+                    <span className="truncate">
+                      {urlAnalysis.seriesName} • {urlAnalysis.currentChapterTitle}
+                    </span>
+                  </div>
+                  <span className="text-[10px] text-zinc-400 font-mono flex-shrink-0">
+                    Tự động tiếp {urlAnalysis.nextChapterTitle}...
+                  </span>
+                </div>
+
+                <div className="flex gap-2 pt-0.5">
+                  <button
+                    type="button"
+                    onClick={handleSubmitBatch}
+                    disabled={isLoading}
+                    className="flex-1 py-2 px-3 bg-gradient-to-r from-orange-600 to-[#e06b3a] hover:from-orange-500 hover:to-orange-600 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-orange-950/40 flex items-center justify-center gap-1.5"
+                  >
+                    <Layers className="w-3.5 h-3.5" />
+                    <span>Dịch toàn bộ truyện</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSubmitSingle}
+                    disabled={isLoading}
+                    className="py-2 px-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-xl text-xs font-semibold transition-colors border border-zinc-700/80"
+                  >
+                    Chỉ dịch 1 chap
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div className="flex items-center justify-between gap-2 text-xs">
+                <span className="text-[11px] text-zinc-400">
+                  Không phát hiện mẫu số chương tự động. Sẽ dịch 1 chương này.
+                </span>
+                <button
+                  type="button"
+                  onClick={handleSubmitSingle}
+                  disabled={isLoading}
+                  className="py-1.5 px-3 bg-[#e06b3a] text-white rounded-xl text-xs font-bold transition-all"
+                >
+                  Dịch chương này
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
 
       {/* Granular Error Banner on Landing */}
       {(detailedError || errorMessage) && (
@@ -292,7 +377,7 @@ export const UrlInputCard: React.FC<UrlInputCardProps> = ({
           </div>
           <button
             type="button"
-            onClick={handleSubmit}
+            onClick={() => handleSubmitSingle()}
             disabled={isLoading}
             className="w-full py-2.5 bg-[#e06b3a] hover:bg-orange-600 text-white text-xs font-semibold rounded-xl flex items-center justify-center gap-1.5 transition-colors shadow-md shadow-orange-900/30"
           >

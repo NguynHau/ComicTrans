@@ -4,13 +4,23 @@ import { OfflineIndicator } from './components/OfflineIndicator';
 import { OrientationLock } from './components/OrientationLock';
 import { UrlInputCard } from './components/UrlInputCard';
 import { JobProgressCard } from './components/JobProgressCard';
+import { BatchProgressCard } from './components/BatchProgressCard';
 import { MangaReader } from './components/MangaReader';
 import { SavedMangaViewer } from './components/SavedMangaViewer';
 import { FolderChaptersModal } from './components/FolderChaptersModal';
 import { ApiDocsModal } from './components/ApiDocsModal';
 import { SettingsModal } from './components/SettingsModal';
 import { UpdateModal } from './components/UpdateModal';
-import { MangaJob, MangaPage, RecentItem, MangaFolder, DetailedError, OCRBoxItem, TranslationItem } from './types';
+import {
+  MangaJob,
+  MangaPage,
+  RecentItem,
+  MangaFolder,
+  DetailedError,
+  OCRBoxItem,
+  TranslationItem,
+  BatchTranslationSession,
+} from './types';
 import { 
   RefreshCw, BookOpen, Key, Sparkles, ShieldCheck, 
   CheckCircle2, AlertCircle, ArrowUpCircle, ExternalLink,
@@ -33,10 +43,14 @@ import {
   generatePageCacheKey,
   getCachedPageTranslation,
   saveCachedPageTranslation,
+  saveBatchSession,
+  getActiveBatchSession,
 } from './lib/storage';
+import { runBatchTranslationLoop } from './lib/batchProcessor';
 
 export function App() {
   const [activeJob, setActiveJob] = useState<MangaJob | null>(null);
+  const [activeBatchSession, setActiveBatchSession] = useState<BatchTranslationSession | null>(null);
   const [pages, setPages] = useState<MangaPage[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -57,6 +71,9 @@ export function App() {
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [updateResult, setUpdateResult] = useState<CheckUpdateResult | null>(null);
   const [isUpdatingApp, setIsUpdatingApp] = useState(false);
+
+  // Batch control ref
+  const abortBatchRef = useRef<boolean>(false);
 
   // Settings config state
   const [settingsApiKey, setSettingsApiKey] = useState('');
@@ -184,16 +201,125 @@ export function App() {
     activeJobRef.current = activeJob;
   }, [activeJob]);
 
-  const handleStartTranslation = async (
+  // Load existing active batch session on mount
+  useEffect(() => {
+    getActiveBatchSession().then((session) => {
+      if (session && (session.status === 'running' || session.status === 'paused')) {
+        setActiveBatchSession(session);
+      }
+    });
+  }, []);
+
+  const startBatchTranslation = async (
     url: string,
     sourceLang: string,
     targetLang: string,
-    images?: string[]
+    resumeSession?: BatchTranslationSession | null
   ) => {
     setIsLoading(true);
     setErrorMessage(null);
     setDetailedError(null);
+    abortBatchRef.current = false;
+
+    const apiKey = localStorage.getItem('GEMINI_API_KEY') || import.meta.env.VITE_GEMINI_API_KEY || '';
+    if (!apiKey) {
+      const missingKeyErr = classifyPipelineError(new Error('API_KEY_MISSING'));
+      setDetailedError(missingKeyErr);
+      setErrorMessage(missingKeyErr.message);
+      setIsLoading(false);
+      return;
+    }
+
+    setIsLoading(false);
+
+    try {
+      await runBatchTranslationLoop(
+        url,
+        sourceLang,
+        targetLang,
+        apiKey,
+        {
+          onSessionUpdate: (session) => {
+            setActiveBatchSession({ ...session });
+          },
+          onActiveJobUpdate: (job, jobPages) => {
+            setActiveJob({ ...job });
+            setPages([...jobPages]);
+          },
+          onChapterCompleted: (summary, recentItem) => {
+            setRecents((prev) => [recentItem, ...prev.filter((x) => x.id !== recentItem.id)]);
+            getFoldersFromStorage().then((f) => setFolders(f));
+          },
+          onBatchFinished: (session) => {
+            setActiveBatchSession({ ...session });
+          },
+          shouldAbort: () => abortBatchRef.current,
+        },
+        resumeSession
+      );
+    } catch (err: any) {
+      console.error('Batch loop failed:', err);
+      const classified = classifyPipelineError(err);
+      setDetailedError(classified);
+      setErrorMessage(classified.message);
+    }
+  };
+
+  const handlePauseBatch = () => {
+    abortBatchRef.current = true;
+    if (activeBatchSession) {
+      const updated: BatchTranslationSession = {
+        ...activeBatchSession,
+        status: 'paused',
+        lastUpdated: new Date().toISOString(),
+      };
+      setActiveBatchSession(updated);
+      saveBatchSession(updated);
+    }
+  };
+
+  const handleResumeBatch = () => {
+    if (activeBatchSession) {
+      abortBatchRef.current = false;
+      startBatchTranslation(
+        activeBatchSession.currentUrl,
+        activeBatchSession.sourceLang,
+        activeBatchSession.targetLang,
+        activeBatchSession
+      );
+    }
+  };
+
+  const handleStopBatch = () => {
+    abortBatchRef.current = true;
+    if (activeBatchSession) {
+      const updated: BatchTranslationSession = {
+        ...activeBatchSession,
+        status: 'stopped',
+        lastUpdated: new Date().toISOString(),
+      };
+      setActiveBatchSession(updated);
+      saveBatchSession(updated);
+    }
+  };
+
+  const handleStartTranslation = async (
+    url: string,
+    sourceLang: string,
+    targetLang: string,
+    images?: string[],
+    isBatchMode?: boolean
+  ) => {
+    if (isBatchMode && url.trim()) {
+      startBatchTranslation(url.trim(), sourceLang, targetLang);
+      return;
+    }
+
+    setIsLoading(true);
+    setErrorMessage(null);
+    setDetailedError(null);
     setActiveJob(null);
+    setActiveBatchSession(null);
     setPages([]);
 
     // 1. Get the API Key
@@ -685,7 +811,7 @@ export function App() {
         {activeTab === 'home' && (
           <div className="w-full flex-1 flex flex-col space-y-4 animate-fadeIn">
             {/* Landing View: Matches Mockup Exactly */}
-            {!activeJob && (
+            {!activeJob && !activeBatchSession && (
               <UrlInputCard
                 onSubmit={handleStartTranslation}
                 isLoading={isLoading}
@@ -696,8 +822,41 @@ export function App() {
               />
             )}
 
-            {/* Active Job Progress View & Reader */}
-            {activeJob && (
+            {/* Batch Translation Progress Card */}
+            {activeBatchSession && (
+              <div className="w-full space-y-4">
+                <BatchProgressCard
+                  session={activeBatchSession}
+                  activeJob={activeJob}
+                  onPause={handlePauseBatch}
+                  onResume={handleResumeBatch}
+                  onStop={handleStopBatch}
+                  onOpenFolder={(folderId, folderName) => {
+                    setActiveFolderForSheet({ id: folderId, name: folderName });
+                  }}
+                  onReadChapter={(recentItemId) => {
+                    const found = recents.find((r) => r.id === recentItemId);
+                    if (found) {
+                      setSelectedSavedManga(found);
+                    }
+                  }}
+                />
+
+                {/* If current chapter has pages loaded/processing, show reader */}
+                {hasReaderView && activeJob && (
+                  <MangaReader
+                    job={activeJob}
+                    pages={pages}
+                    onRetryPage={handleRetryPage}
+                    onUpdateDialogue={handleUpdateDialogue}
+                    onReset={handleReset}
+                  />
+                )}
+              </div>
+            )}
+
+            {/* Single Job Progress View & Reader */}
+            {activeJob && !activeBatchSession && (
               <div className="w-full space-y-4">
                 <JobProgressCard
                   job={activeJob}

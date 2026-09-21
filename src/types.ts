@@ -86,3 +86,30 @@ export interface RecentItem {
   job: MangaJob;
   pages: MangaPage[];
 }
+
+export interface BatchChapterSummary {
+  chapterNumber: number;
+  title: string;
+  url: string;
+  pageCount: number;
+  completedAt: string;
+  recentItemId: string;
+}
+
+export interface BatchTranslationSession {
+  id: string;
+  seriesName: string;
+  folderId: string;
+  sourceLang: string;
+  targetLang: string;
+  initialUrl: string;
+  currentUrl: string;
+  currentChapterNumber: number;
+  completedChapters: BatchChapterSummary[];
+  status: 'idle' | 'running' | 'paused' | 'completed' | 'failed' | 'stopped';
+  errorMessage?: string;
+  detailedError?: DetailedError;
+  consecutiveErrors: number;
+  lastUpdated: string;
+  maxChapters?: number;
+}
