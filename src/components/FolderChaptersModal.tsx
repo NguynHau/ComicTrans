@@ -127,81 +127,38 @@ export const FolderChaptersModal: React.FC<FolderChaptersModalProps> = ({
             </div>
           ) : (
             sortedChapters.map((item) => (
-              <div
+              <motion.div
                 key={item.id}
-                onClick={() => onSelectChapter(item)}
-                className="group relative flex gap-3 p-3 bg-[#0d0d0f] hover:bg-[#1c1c22] border border-zinc-800/80 hover:border-zinc-700/80 rounded-2xl transition-all cursor-pointer shadow-md"
+                drag="x"
+                dragConstraints={{ left: 0, right: 0 }}
+                onDragEnd={(e, info) => {
+                  if (info.offset.x > 100) {
+                     const folderId = prompt("Enter Folder ID:", "");
+                     if(folderId) onMoveToFolder(item.id, folderId);
+                  } else if (info.offset.x < -100) {
+                    onDeleteChapter(item.id, e as any);
+                  }
+                }}
+                className="group relative flex gap-3 p-3 bg-[#0d0d0f] hover:bg-[#1c1c22] border border-zinc-800/80 hover:border-zinc-700/80 rounded-2xl transition-all shadow-md cursor-grab"
               >
-                {/* Thumbnail */}
-                <div className="w-12 h-16 bg-zinc-900 rounded-xl overflow-hidden flex-shrink-0 border border-zinc-800">
-                  {item.thumbnail ? (
-                    <img
-                      src={item.thumbnail}
-                      alt={item.title}
-                      referrerPolicy="no-referrer"
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                    />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-zinc-600">
-                      <BookOpen className="w-5 h-5" />
-                    </div>
-                  )}
+                <div className="absolute inset-0 flex justify-between items-center px-4 pointer-events-none">
+                  <div className="text-[#e06b3a] text-xs font-bold">MOVE</div>
+                  <div className="text-rose-500 text-xs font-bold">DELETE</div>
                 </div>
 
-                {/* Chapter Metadata */}
-                <div className="flex-1 min-w-0 flex flex-col justify-between py-0.5 pr-14">
-                  <div className="space-y-1">
-                    <h4 className="text-xs sm:text-sm font-bold text-zinc-200 truncate group-hover:text-[#e06b3a] transition-colors">
-                      {item.title}
-                    </h4>
-                    {item.sourceUrl && item.sourceUrl.startsWith('http') && (
-                      <span
-                        className="text-[10px] text-zinc-500 font-normal break-all block mt-0.5"
-                        title={item.sourceUrl}
-                      >
-                        {item.sourceUrl}
-                      </span>
+                <div className="relative z-10 flex gap-3 w-full" onClick={() => onSelectChapter(item)}>
+                  <div className="w-12 h-16 bg-zinc-900 rounded-xl overflow-hidden flex-shrink-0 border border-zinc-800">
+                    {item.thumbnail ? (
+                      <img src={item.thumbnail} alt={item.title} referrerPolicy="no-referrer" className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-zinc-600"><BookOpen className="w-5 h-5" /></div>
                     )}
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-[10px] text-zinc-400">
-                        Đã dịch:{' '}
-                        <span className="text-emerald-400 font-semibold">
-                          {item.completedPages}/{item.totalPages} trang
-                        </span>
-                      </span>
-                    </div>
                   </div>
-                  <p className="text-[10px] text-zinc-500 font-medium">{item.timestamp}</p>
+                  <div className="flex-1 min-w-0 flex flex-col justify-center py-0.5">
+                    <h4 className="text-xs sm:text-sm font-bold text-zinc-200 truncate group-hover:text-[#e06b3a] transition-colors">{item.title}</h4>
+                  </div>
                 </div>
-
-                {/* Action Buttons: Delete & Open Link */}
-                <div className="absolute top-3 right-3 flex flex-col items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (confirm(`Bạn có chắc chắn muốn xóa chương "${item.title}"?`)) {
-                        onDeleteChapter(item.id, e);
-                      }
-                    }}
-                    className="p-1.5 rounded-lg text-zinc-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
-                    title="Xóa chap này"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                  
-                  {item.sourceUrl && item.sourceUrl.startsWith('http') && (
-                    <button
-                      type="button"
-                      onClick={(e) => handleOpenSourceUrl(item.sourceUrl!, e)}
-                      className="p-1.5 rounded-lg text-zinc-500 hover:text-[#e06b3a] hover:bg-orange-500/10 transition-colors"
-                      title="Truy cập link gốc"
-                    >
-                      <ExternalLink className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                </div>
-              </div>
+              </motion.div>
             ))
           )}
         </div>

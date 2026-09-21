@@ -240,40 +240,6 @@ export const SavedMangaViewer: React.FC<SavedMangaViewerProps> = ({
           </div>
         </div>
 
-        {/* Row 2: Chế độ Lật trang vs Cuộn */}
-        <div className="flex items-center justify-between gap-2 max-w-2xl w-full mx-auto">
-          <div className="flex items-center bg-zinc-900/90 border border-zinc-800 rounded-xl p-0.5 gap-1 text-xs">
-            <button
-              onClick={() => setViewMode('scroll')}
-              className={`py-1 px-2.5 rounded-lg font-semibold flex items-center gap-1 transition-all ${
-                viewMode === 'scroll'
-                  ? 'bg-[#e06b3a] text-white shadow-sm'
-                  : 'text-zinc-400 hover:text-zinc-200'
-              }`}
-            >
-              <Scroll className="w-3 h-3" />
-              <span>Cuộn dọc</span>
-            </button>
-            <button
-              onClick={() => setViewMode('single')}
-              className={`py-1 px-2.5 rounded-lg font-semibold flex items-center gap-1 transition-all ${
-                viewMode === 'single'
-                  ? 'bg-[#e06b3a] text-white shadow-sm'
-                  : 'text-zinc-400 hover:text-zinc-200'
-              }`}
-            >
-              <Maximize2 className="w-3 h-3" />
-              <span>Lật trang</span>
-            </button>
-          </div>
-
-          {viewMode === 'single' && pages.length > 0 && (
-            <div className="text-[11px] font-mono text-zinc-400 bg-zinc-900/80 px-2.5 py-1 rounded-lg border border-zinc-800">
-              Trang {currentPageIdx + 1} / {pages.length}
-            </div>
-          )}
-        </div>
-
         {/* Expandable Reader Settings Panel */}
         {showSettings && (
           <div className="max-w-2xl w-full mx-auto">
