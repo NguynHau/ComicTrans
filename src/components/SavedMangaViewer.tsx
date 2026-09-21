@@ -11,6 +11,7 @@ import {
   Loader2,
   Maximize2,
   Scroll,
+  Trash2,
 } from 'lucide-react';
 import { RecentItem, MangaPage } from '../types';
 import { sortChapters } from '../lib/chapterSort';
@@ -30,6 +31,7 @@ interface SavedMangaViewerProps {
   allFolderItems?: RecentItem[];
   onClose: () => void;
   onSelectChapter?: (item: RecentItem) => void;
+  onDeleteChapter?: (id: string) => void;
 }
 
 export const SavedMangaViewer: React.FC<SavedMangaViewerProps> = ({
@@ -37,11 +39,13 @@ export const SavedMangaViewer: React.FC<SavedMangaViewerProps> = ({
   allFolderItems = [],
   onClose,
   onSelectChapter,
+  onDeleteChapter,
 }) => {
   const [currentChapter, setCurrentChapter] = useState<RecentItem>(item);
   const [pages, setPages] = useState<MangaPage[]>(item.pages || []);
   const [viewMode, setViewMode] = useState<'single' | 'scroll'>('scroll');
   const [currentPageIdx, setCurrentPageIdx] = useState(0);
+  const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
 
   // Advanced Reader Settings
   const [showSettings, setShowSettings] = useState(false);
@@ -174,47 +178,58 @@ export const SavedMangaViewer: React.FC<SavedMangaViewerProps> = ({
             <button
               onClick={handleDownloadOffline}
               disabled={pages.length === 0 || isDownloadingOffline}
-              className={`py-1.5 px-2.5 rounded-xl border text-[11px] font-bold transition-all flex items-center gap-1 shadow-sm ${
+              className={`w-8 h-8 sm:w-9 sm:h-9 rounded-xl border flex items-center justify-center transition-all shadow-sm ${
                 isOfflineCached
                   ? 'bg-emerald-950/60 border-emerald-500/50 text-emerald-300'
-                  : 'bg-zinc-900 border-zinc-700/80 text-zinc-200 hover:bg-zinc-800 hover:text-white'
+                  : 'bg-zinc-900/90 border-zinc-700/80 text-zinc-200 hover:bg-zinc-800 hover:text-white'
               }`}
-              title="Lưu vào bộ nhớ cache để đọc khi không có mạng"
+              title={
+                isDownloadingOffline
+                  ? `Đang tải: ${offlineProgress?.current || 0}/${offlineProgress?.total || 0}`
+                  : isOfflineCached
+                  ? 'Đã tải offline'
+                  : 'Tải về đọc offline'
+              }
             >
               {isDownloadingOffline ? (
-                <>
-                  <Loader2 className="w-3.5 h-3.5 animate-spin text-orange-400" />
-                  <span className="hidden sm:inline">
-                    {offlineProgress ? `${offlineProgress.current}/${offlineProgress.total}` : 'Tải...'}
-                  </span>
-                </>
+                <Loader2 className="w-4 h-4 animate-spin text-orange-400" />
               ) : isOfflineCached ? (
-                <>
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                  <span className="hidden sm:inline">Offline OK</span>
-                </>
+                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
               ) : (
-                <>
-                  <Download className="w-3.5 h-3.5 text-[#e06b3a]" />
-                  <span className="hidden sm:inline">Tải Offline</span>
-                </>
+                <Download className="w-4 h-4 text-[#e06b3a]" />
               )}
             </button>
 
-            {/* Nút Tùy chỉnh (Độ sáng, ban đêm, sepia) */}
+            {/* Nút Tùy chỉnh (Độ sáng, bảo vệ mắt, đen trắng) */}
             <button
               onClick={() => setShowSettings((prev) => !prev)}
-              className={`p-2 rounded-xl border transition-all ${
+              className={`w-8 h-8 sm:w-9 sm:h-9 rounded-xl border flex items-center justify-center transition-all shadow-sm ${
                 showSettings
                   ? 'bg-[#e06b3a] text-white border-orange-500 shadow-md'
                   : 'bg-zinc-900/90 border-zinc-700/80 text-zinc-200 hover:bg-zinc-800'
               }`}
-              title="Cài đặt độ sáng, chế độ ban đêm, sepia"
+              title="Cài đặt độ sáng, bảo vệ mắt, đen trắng"
             >
               <Sliders className="w-4 h-4" />
             </button>
 
-            {/* Nút Đóng */}
+            {/* Nút Xoá (nếu có onDeleteChapter) */}
+            {onDeleteChapter && (
+              <button
+                onClick={() => {
+                  if (confirm('Bạn có chắc muốn xoá chương này khỏi bộ sưu tập?')) {
+                    onDeleteChapter(currentChapter.id);
+                    onClose();
+                  }
+                }}
+                className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-zinc-900/90 border border-zinc-700/80 text-zinc-400 hover:text-rose-400 hover:border-rose-500/50 hover:bg-rose-950/30 flex items-center justify-center transition-all shadow-sm"
+                title="Xoá chương truyện"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            )}
+
+            {/* Nút Đóng / Thoát */}
             <button
               onClick={onClose}
               className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-zinc-900/90 border border-zinc-700/80 text-zinc-200 flex items-center justify-center hover:bg-zinc-800 hover:text-white transition-all shadow-xl"

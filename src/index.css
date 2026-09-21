@@ -1,7 +1,18 @@
 @import "tailwindcss";
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,200..800;1,200..800&family=Lora:ital,wght@0,400..700;1,400..700&display=swap');
 
+@theme {
+  --font-sans: 'Lora', Georgia, serif;
+  --font-serif: 'Lora', Georgia, serif;
+  --font-serif-logo: 'Lora', Georgia, serif;
+}
+
 @layer base {
+  *, ::before, ::after {
+    font-family: inherit;
+  }
+
+  html,
   body {
     font-family: 'Lora', Georgia, serif !important;
     background-color: #050505;
@@ -9,6 +20,14 @@
     -webkit-tap-highlight-color: transparent;
     user-select: none;
     -webkit-user-select: none;
+  }
+
+  button,
+  input,
+  optgroup,
+  select,
+  textarea {
+    font-family: 'Lora', Georgia, serif;
   }
 }
 

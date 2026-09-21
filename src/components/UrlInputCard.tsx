@@ -39,11 +39,11 @@ interface UrlInputCardProps {
 }
 
 const SOURCES = [
-  { id: 'jp', label: 'J-Comic (JP)', lang: 'ja', hint: 'Manga Nhật (Tiếng Nhật)' },
-  { id: 'kr', label: 'ManhwaHub (KR)', lang: 'ko', hint: 'Manhwa Hàn (Tiếng Hàn)' },
-  { id: 'en', label: 'MangaPlus (EN)', lang: 'en', hint: 'Truyện tiếng Anh' },
-  { id: 'gl', label: 'Webtoons (GL)', lang: 'ko', hint: 'Webtoon bản quốc tế' },
-  { id: 'custom', label: 'Generic Web URL', lang: 'auto', hint: 'Dán liên kết web bất kỳ' },
+  { id: 'manga', label: 'Manga', flag: '🇯🇵', lang: 'ja', hint: 'Manga Nhật Bản (Tiếng Nhật)' },
+  { id: 'manhwa', label: 'Manhwa', flag: '🇰🇷', lang: 'ko', hint: 'Manhwa Hàn Quốc (Tiếng Hàn)' },
+  { id: 'manhua', label: 'Manhua', flag: '🇨🇳', lang: 'zh', hint: 'Manhua Trung Quốc (Tiếng Trung)' },
+  { id: 'comic', label: 'Comic', flag: '🇺🇸', lang: 'en', hint: 'Comic Âu Mỹ (Tiếng Anh)' },
+  { id: 'custom', label: 'Generic Web URL', flag: '', lang: 'auto', hint: 'Dán liên kết web bất kỳ' },
 ];
 
 export const UrlInputCard: React.FC<UrlInputCardProps> = ({
@@ -392,19 +392,34 @@ export const UrlInputCard: React.FC<UrlInputCardProps> = ({
 
       {/* Section 1: Translation Sources (Nguồn dịch) */}
       <div className="space-y-2.5">
-        <h2 className="text-sm font-semibold text-zinc-200">Nguồn dịch</h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-zinc-200">Nguồn dịch</h2>
+          {sourceLang !== 'auto' && (
+            <span className="text-[11px] text-[#e06b3a] font-medium flex items-center gap-1">
+              Đang chọn: {SOURCES.find((s) => s.lang === sourceLang)?.label} {SOURCES.find((s) => s.lang === sourceLang)?.flag}
+            </span>
+          )}
+        </div>
         <div className="flex flex-wrap gap-2">
-          {SOURCES.map((src) => (
-            <button
-              key={src.id}
-              type="button"
-              onClick={() => handleSourceClick(src)}
-              className="px-3.5 py-1.5 text-xs font-medium rounded-xl bg-[#141417] hover:bg-[#1c1c21] text-zinc-300 hover:text-zinc-100 border border-zinc-800/80 hover:border-zinc-700 transition-all active:scale-95 text-left"
-              title={src.hint}
-            >
-              {src.label}
-            </button>
-          ))}
+          {SOURCES.map((src) => {
+            const isSelected = src.id !== 'custom' && sourceLang === src.lang;
+            return (
+              <button
+                key={src.id}
+                type="button"
+                onClick={() => handleSourceClick(src)}
+                className={`px-3.5 py-1.5 text-xs font-semibold rounded-xl border transition-all active:scale-95 flex items-center gap-1.5 shadow-sm ${
+                  isSelected
+                    ? 'bg-[#1e1916] border-[#e06b3a] text-zinc-100 shadow-orange-950/20'
+                    : 'bg-[#141417] hover:bg-[#1c1c21] text-zinc-300 hover:text-zinc-100 border-zinc-800/80 hover:border-zinc-700'
+                }`}
+                title={src.hint}
+              >
+                <span>{src.label}</span>
+                {src.flag && <span className="text-sm leading-none">{src.flag}</span>}
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -424,13 +439,12 @@ export const UrlInputCard: React.FC<UrlInputCardProps> = ({
         </div>
 
         {recents.length === 0 ? (
-          /* Empty State Matches Mockup Exactly */
+          /* Empty State: Ô vuông to đứt nét giữ bìa truyện, logo không có khung vuông nhỏ */
           <div className="flex items-center gap-4 p-1">
-            {/* Dashed placeholder box */}
+            {/* Ô vuông to đứt nét */}
             <div className="w-24 h-32 rounded-2xl border border-dashed border-zinc-800 bg-[#121215]/60 flex items-center justify-center flex-shrink-0">
-              <div className="w-10 h-10 rounded-xl bg-orange-500/10 border border-orange-500/20 flex items-center justify-center text-[#e06b3a]">
-                <FileText className="w-5 h-5" />
-              </div>
+              {/* Logo tinh gọn, không có khung viền vuông bên ngoài */}
+              <FileText className="w-8 h-8 text-[#e06b3a] stroke-[1.6]" />
             </div>
 
             {/* Description Text */}

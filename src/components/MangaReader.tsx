@@ -240,7 +240,7 @@ export const MangaReader: React.FC<MangaReaderProps> = ({
                 ? 'bg-[#e06b3a] text-white border-orange-500'
                 : 'bg-[#141417] border-zinc-800 text-zinc-300 hover:text-white hover:bg-zinc-800'
             }`}
-            title="Mở cài đặt độ sáng, bộ lọc ban đêm, sepia"
+            title="Mở cài đặt độ sáng, bảo vệ mắt, đen trắng"
           >
             <Sliders className="w-3.5 h-3.5 flex-shrink-0" />
             <span className="hidden sm:inline">Tùy chỉnh</span>

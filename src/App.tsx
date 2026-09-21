@@ -726,8 +726,8 @@ export function App() {
     );
   };
 
-  const handleDeleteRecent = async (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleDeleteRecent = async (id: string, e?: React.MouseEvent) => {
+    e?.stopPropagation?.();
     const updated = recents.filter(item => item.id !== id);
     setRecents(updated);
     await deleteRecentItemFromStorage(id);
@@ -804,7 +804,7 @@ export function App() {
   };
 
   return (
-    <div className="min-h-screen bg-comic-panel text-zinc-100 flex flex-col font-sans selection:bg-[#e06b3a] selection:text-white pb-44">
+    <div className="min-h-screen bg-comic-panel text-zinc-100 flex flex-col font-serif-logo selection:bg-[#e06b3a] selection:text-white pb-44">
       {/* Orientation Lock (Blocks landscape rotation on mobile) */}
       <OrientationLock />
 
@@ -925,8 +925,8 @@ export function App() {
 
             {recents.length === 0 && folders.length === 0 ? (
               <div className="py-12 px-6 text-center space-y-4 bg-[#141417]/40 rounded-2xl border border-zinc-800/60 flex flex-col items-center justify-center">
-                <div className="p-4 bg-[#1c1c22] rounded-full text-zinc-600 border border-zinc-800">
-                  <BookOpen className="w-8 h-8" />
+                <div className="text-[#e06b3a] flex items-center justify-center">
+                  <BookOpen className="w-10 h-10 stroke-[1.6]" />
                 </div>
                 <div className="space-y-1">
                   <p className="text-sm font-bold text-zinc-300">Thư viện trống</p>
@@ -1264,6 +1264,10 @@ export function App() {
           }
           onClose={() => setSelectedSavedManga(null)}
           onSelectChapter={(item) => setSelectedSavedManga(item)}
+          onDeleteChapter={(id) => {
+            handleDeleteRecent(id);
+            setSelectedSavedManga(null);
+          }}
         />
       )}
 
