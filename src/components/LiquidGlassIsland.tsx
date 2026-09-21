@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, useSpring, useMotionValue, useTransform } from 'motion/react';
-import { Home, Compass, Plus, Sparkles, Settings } from 'lucide-react';
+import { Home, Compass, Plus, RefreshCw, Settings } from 'lucide-react';
 
 interface LiquidGlassIslandProps {
   activeTab: string;
@@ -10,7 +10,7 @@ interface LiquidGlassIslandProps {
 const TABS = [
   { id: 'home', label: 'Trang chủ', icon: Home },
   { id: 'manga', label: 'Truyện', icon: Compass },
-  { id: 'update', label: 'Cập nhật', icon: Sparkles },
+  { id: 'update', label: 'Cập nhật', icon: RefreshCw },
   { id: 'settings', label: 'Cài đặt', icon: Settings },
 ];
 

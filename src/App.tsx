@@ -1024,7 +1024,7 @@ export function App() {
           <div className="w-full space-y-4 animate-fadeIn">
             <div className="space-y-1">
               <h2 className="text-xl font-extrabold text-zinc-100 tracking-tight flex items-center gap-2">
-                <Sparkles className="w-5 h-5 text-[#e06b3a]" />
+                <RefreshCw className="w-5 h-5 text-[#e06b3a]" />
                 <span>Cập nhật Hệ thống</span>
               </h2>
               <p className="text-xs text-zinc-400">
