@@ -750,6 +750,12 @@ export function App() {
     setCheckingUpdate(false);
   };
 
+  useEffect(() => {
+    if (activeTab === 'update') {
+      handleRunCheckUpdate();
+    }
+  }, [activeTab]);
+
   const handleApplyUpdateAction = async () => {
     setIsUpdatingApp(true);
     await applyAppUpdate();
@@ -1202,34 +1208,59 @@ export function App() {
                 </div>
               )}
             </div>
+
+            {/* System Update Section in Settings */}
+            <div className="pt-3 border-t border-zinc-800 space-y-2">
+              <div className="flex items-center justify-between bg-[#141417] p-3 rounded-xl border border-zinc-800 text-xs">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-[#e06b3a]" />
+                  <span className="text-zinc-300 font-medium">Phiên bản ứng dụng:</span>
+                </div>
+                <span className="font-mono font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20 text-[11px]">
+                  v{CURRENT_VERSION.version}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab('update');
+                  handleRunCheckUpdate();
+                }}
+                className="w-full py-2.5 px-3 text-xs font-bold rounded-xl bg-[#141417] hover:bg-zinc-800 text-zinc-200 border border-zinc-700/80 flex items-center justify-center gap-2 transition-all shadow-sm"
+              >
+                <RefreshCw className="w-3.5 h-3.5 text-[#e06b3a]" />
+                <span>Kiểm tra cập nhật</span>
+              </button>
+            </div>
           </div>
         )}
       </main>
-
-      {/* Floating Update Notification Toast */}
-      {updateResult?.hasUpdate && activeTab !== 'update' && (
-        <div className="fixed bottom-22 left-1/2 -translate-x-1/2 z-[140] w-[90%] max-w-md bg-gradient-to-r from-orange-600 via-amber-600 to-orange-600 text-white p-3 rounded-2xl shadow-xl shadow-orange-950/50 border border-orange-400/40 flex items-center justify-between gap-3 animate-bounce-subtle">
-          <div className="flex items-center gap-2.5 overflow-hidden">
-            <Sparkles className="w-5 h-5 text-amber-200 flex-shrink-0 animate-pulse" />
-            <div className="text-xs">
-              <p className="font-extrabold text-white">Đã có bản cập nhật v{updateResult.latestVersion}!</p>
-              <p className="text-[11px] text-orange-100/90 truncate">Nhấn để nâng cấp ngay phiên bản mới</p>
-            </div>
-          </div>
-          <button
-            onClick={() => applyAppUpdate()}
-            className="px-3 py-1.5 bg-white text-orange-700 font-bold rounded-xl text-xs hover:bg-orange-50 transition-all flex-shrink-0 shadow-sm"
-          >
-            Cập nhật
-          </button>
-        </div>
-      )}
 
       {/* Floating Liquid Glass Island Navigation */}
       <LiquidGlassIsland
         activeTab={activeTab}
         onChangeTab={(tabId) => setActiveTab(tabId as any)}
       />
+
+      {/* Settings Modal */}
+      {isSettingsModalOpen && (
+        <SettingsModal
+          isOpen={isSettingsModalOpen}
+          onClose={() => setIsSettingsModalOpen(false)}
+          onOpenUpdateModal={() => {
+            setIsSettingsModalOpen(false);
+            setIsUpdateModalOpen(true);
+          }}
+        />
+      )}
+
+      {/* Update Modal */}
+      {isUpdateModalOpen && (
+        <UpdateModal
+          isOpen={isUpdateModalOpen}
+          onClose={() => setIsUpdateModalOpen(false)}
+        />
+      )}
 
       {/* Folder 3/4 Bottom Sheet Modal */}
       {activeFolderForSheet && (
