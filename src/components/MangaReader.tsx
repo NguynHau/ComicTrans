@@ -33,6 +33,7 @@ interface MangaReaderProps {
   onRetryPage: (pageId: string) => void;
   onUpdateDialogue?: (pageId: string, dialogueIndex: number, newText: string, updatedPage?: MangaPage) => void;
   onReset?: () => void;
+  onSave?: () => void;
 }
 
 export const MangaReader: React.FC<MangaReaderProps> = ({
@@ -40,6 +41,7 @@ export const MangaReader: React.FC<MangaReaderProps> = ({
   pages: initialPages,
   onRetryPage,
   onReset,
+  onSave,
 }) => {
   const [currentPageIdx, setCurrentPageIdx] = useState(0);
   const [viewMode, setViewMode] = useState<'single' | 'scroll'>('single');
@@ -99,6 +101,7 @@ export const MangaReader: React.FC<MangaReaderProps> = ({
 
   const handleSaveSuccess = () => {
     setSavedSuccess(true);
+    if (onSave) onSave();
     setTimeout(() => setSavedSuccess(false), 2000);
   };
 

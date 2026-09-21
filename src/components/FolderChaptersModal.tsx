@@ -32,12 +32,12 @@ const SwipeableChapterCard: React.FC<SwipeableChapterCardProps> = ({
   const [position, setPosition] = useState<'closed' | 'left' | 'right'>('closed');
 
   const handleDragEnd = (event: any, info: any) => {
-    // If swiped right (revealing left button)
-    if (info.offset.x > 50) {
+    // If swiped right (revealing left button) with threshold of 80px
+    if (info.offset.x > 80) {
       setPosition('right');
     }
-    // If swiped left (revealing right button)
-    else if (info.offset.x < -50) {
+    // If swiped left (revealing right button) with threshold of -80px
+    else if (info.offset.x < -80) {
       setPosition('left');
     } else {
       setPosition('closed');
@@ -53,7 +53,7 @@ const SwipeableChapterCard: React.FC<SwipeableChapterCardProps> = ({
   };
 
   return (
-    <div className="relative overflow-hidden rounded-2xl bg-[#0d0d0f] border border-zinc-800/80 h-[80px]">
+    <div className="relative overflow-hidden rounded-2xl bg-[#0d0d0f] border border-zinc-800/80 h-[95px]">
       {/* UNDERLAY ACTIONS */}
       <div className="absolute inset-0 flex items-center justify-between z-0">
         {/* Left Action (Move Folder) - Revealed when swiped to 'right' (x > 0) */}
@@ -90,9 +90,9 @@ const SwipeableChapterCard: React.FC<SwipeableChapterCardProps> = ({
         drag="x"
         dragDirectionLock
         dragConstraints={{ left: -100, right: 100 }}
-        dragElastic={0.2}
+        dragElastic={0.45}
         animate={{ x: position === 'right' ? 100 : position === 'left' ? -100 : 0 }}
-        transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+        transition={{ type: 'spring', stiffness: 320, damping: 28 }}
         onDragEnd={handleDragEnd}
         whileTap={{ cursor: 'grabbing' }}
         onClick={handleCardClick}
@@ -117,11 +117,18 @@ const SwipeableChapterCard: React.FC<SwipeableChapterCardProps> = ({
             <h4 className="text-xs sm:text-sm font-bold text-zinc-100 truncate group-hover:text-[#e06b3a] transition-colors">
               {item.title}
             </h4>
-            {item.job?.completed_pages !== undefined && (
-              <p className="text-[10px] text-zinc-500 font-semibold mt-0.5">
-                Đã dịch: <span className="text-emerald-400 font-bold">{item.job.completed_pages}/{item.job.total_pages} trang</span>
-              </p>
-            )}
+            <div className="flex flex-col gap-0.5 mt-1">
+              {item.job?.completed_pages !== undefined && (
+                <p className="text-[10px] text-zinc-500 font-semibold">
+                  Đã dịch: <span className="text-emerald-400 font-bold">{item.job.completed_pages}/{item.job.total_pages} trang</span>
+                </p>
+              )}
+              {item.sourceUrl && (
+                <p className="text-[9px] text-zinc-500 break-all whitespace-pre-wrap font-mono leading-tight mt-0.5">
+                  {item.sourceUrl}
+                </p>
+              )}
+            </div>
           </div>
         </div>
 

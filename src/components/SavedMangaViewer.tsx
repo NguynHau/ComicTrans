@@ -213,22 +213,6 @@ export const SavedMangaViewer: React.FC<SavedMangaViewerProps> = ({
               <Sliders className="w-4 h-4" />
             </button>
 
-            {/* Nút Xoá (nếu có onDeleteChapter) */}
-            {onDeleteChapter && (
-              <button
-                onClick={() => {
-                  if (confirm('Bạn có chắc muốn xoá chương này khỏi bộ sưu tập?')) {
-                    onDeleteChapter(currentChapter.id);
-                    onClose();
-                  }
-                }}
-                className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-zinc-900/90 border border-zinc-700/80 text-zinc-400 hover:text-rose-400 hover:border-rose-500/50 hover:bg-rose-950/30 flex items-center justify-center transition-all shadow-sm"
-                title="Xoá chương truyện"
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
-            )}
-
             {/* Nút Đóng / Thoát */}
             <button
               onClick={onClose}

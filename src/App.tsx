@@ -425,31 +425,9 @@ export function App() {
       let currentPagesArray = [...initialPages];
       let isAborted = false;
 
-      // Helper function to persist progress incrementally to prevent data loss
+      // Helper function to persist progress incrementally (not stored globally unless explicitly saved)
       const persistCurrentProgress = (completed: number, pagesSnapshot: MangaPage[]) => {
-        try {
-          const recentItem: RecentItem = {
-            id: job_id,
-            title: url
-              ? (url.split('/').filter(Boolean).pop()?.replace(/[-_]/g, ' ') || 'Chương truyện')
-              : 'Tệp tải lên cá nhân',
-            sourceUrl: url,
-            thumbnail: pagesSnapshot[0]?.processed_image || resolvedImages[0],
-            totalPages: resolvedImages.length,
-            completedPages: completed,
-            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            job: {
-              ...initialJob,
-              status: completed === resolvedImages.length ? 'completed' : 'processing',
-              completed_pages: completed,
-              total_pages: resolvedImages.length,
-            },
-            pages: pagesSnapshot,
-          };
-          saveRecentItemToStorage(recentItem).catch(() => {});
-        } catch {
-          // ignore
-        }
+        // Only keep in memory during active translation session
       };
 
       const queue = initialPages.map((page, index) => ({ page, index }));
@@ -922,6 +900,10 @@ export function App() {
                     pages={pages}
                     onRetryPage={handleRetryPage}
                     onUpdateDialogue={handleUpdateDialogue}
+                    onSave={async () => {
+                      const updatedRecents = await getRecentItemsFromStorage();
+                      setRecents(updatedRecents);
+                    }}
                     onReset={() => {
                       setShowReader(false);
                       handleReset();
