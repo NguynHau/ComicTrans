@@ -45,13 +45,13 @@ export const LiquidGlassIsland: React.FC<LiquidGlassIslandProps> = ({
     damping: 25,
   });
 
-  // Dynamic Clip-Path that scales and moves synchronously with animatedX and pressScaleX (with 0.75px left correction for absolute alignment)
+  // Dynamic Clip-Path that scales and moves synchronously with animatedX and pressScaleX
   const clipPathStyle = useTransform(
     [animatedX, pressScaleX],
     ([x, scaleX]) => {
       const currentWidth = 71 * (scaleX as number);
       const offset = (currentWidth - 71) / 2;
-      const newX = (x as number) - offset - 0.75;
+      const newX = (x as number) - offset;
       return `inset(5px calc(100% - (${newX}px + ${currentWidth}px)) 5px ${newX}px round 9999px)`;
     }
   );
@@ -62,19 +62,21 @@ export const LiquidGlassIsland: React.FC<LiquidGlassIslandProps> = ({
 
   // Helper to calculate dynamic bounds based on current container width
   const getBounds = () => {
-    if (!containerRef.current) return { min: 0, max: 280, itemWidth: 70 };
-    const containerWidth = containerRef.current.offsetWidth || 350;
-    const itemWidth = containerWidth / TABS.length;
-    const min = itemWidth / 2 - 35.5;
-    const max = (TABS.length - 1) * itemWidth + itemWidth / 2 - 35.5;
+    if (!containerRef.current) return { min: 0, max: 284, itemWidth: 71 };
+    const containerWidth = containerRef.current.offsetWidth || 294;
+    // Account for px-[5px] padding (5px on each side = 10px total)
+    const innerWidth = containerWidth - 10;
+    const itemWidth = innerWidth / TABS.length;
+    const min = (5 + itemWidth / 2) - 35.5;
+    const max = (5 + (TABS.length - 1) * itemWidth + itemWidth / 2) - 35.5;
     return { min, max, itemWidth };
   };
 
   // Calculate and update position based on active tab index
   const updatePosition = (idx: number) => {
     if (isDragging.current) return; // Do not interrupt during manual drag
-    const { min, itemWidth } = getBounds();
-    const targetX = idx * itemWidth + itemWidth / 2 - 35.5;
+    const { itemWidth } = getBounds();
+    const targetX = 5 + (idx * itemWidth) + (itemWidth / 2) - 35.5;
     blobTargetX.set(targetX);
   };
 
@@ -108,7 +110,7 @@ export const LiquidGlassIsland: React.FC<LiquidGlassIslandProps> = ({
     if (!containerRef.current) return;
 
     const rect = containerRef.current.getBoundingClientRect();
-    const paddingLeft = 6; // px-1.5 = 6px
+    const paddingLeft = 5; // px-[5px] = 5px
     const localX = e.clientX - rect.left - paddingLeft;
     const targetX = localX - 35.5; // 35.5 is half of droplet width (71)
 
@@ -176,7 +178,7 @@ export const LiquidGlassIsland: React.FC<LiquidGlassIslandProps> = ({
       Math.min(TABS.length - 1, Math.round((currentX - min) / itemWidth))
     );
 
-    const targetX = closestIdx * itemWidth + itemWidth / 2 - 35.5;
+    const targetX = 5 + closestIdx * itemWidth + itemWidth / 2 - 35.5;
     blobTargetX.set(targetX);
     onChangeTab(TABS[closestIdx].id);
   };
@@ -205,7 +207,7 @@ export const LiquidGlassIsland: React.FC<LiquidGlassIslandProps> = ({
           style={{
             width: '100%',
             minWidth: 280,
-            maxWidth: 500,
+            maxWidth: 294,
             height: 64,
             borderRadius: 9999,
             backgroundColor: 'rgba(255, 255, 255, 0)',
@@ -215,10 +217,10 @@ export const LiquidGlassIsland: React.FC<LiquidGlassIslandProps> = ({
             boxShadow:
               '0px -30px 0px 0px rgba(0, 0, 0, 0), inset 0 1px 1px rgba(255, 255, 255, 0)',
           }}
-          className="relative pointer-events-auto flex items-center justify-between px-1.5 select-none mx-auto cursor-grab active:cursor-grabbing touch-none"
+          className="relative pointer-events-auto flex items-center justify-between px-[5px] select-none mx-auto cursor-grab active:cursor-grabbing touch-none"
         >
-          {/* Droplet Positioning Wrapper matching Layer 1 & 2 px-1.5 */}
-          <div className="absolute inset-0 px-1.5 flex items-center pointer-events-none z-0">
+          {/* Droplet Positioning Wrapper matching Layer 1 & 2 px-[5px] */}
+          <div className="absolute inset-0 px-[5px] flex items-center pointer-events-none z-0">
             {/* Liquid Droplet Indicator (Droplet Swell & Slide) */}
             <motion.div
               style={{
@@ -240,14 +242,14 @@ export const LiquidGlassIsland: React.FC<LiquidGlassIslandProps> = ({
           </div>
 
           {/* LAYER 1: Inactive Icons Base (#71717a - zinc-500) */}
-          <div className="absolute inset-0 flex items-center justify-around z-10 px-1.5 pointer-events-none">
+          <div className="absolute inset-0 flex items-center z-10 px-[5px] pointer-events-none w-full">
             {TABS.map((tab) => {
               const IconComp = tab.icon;
               return (
                 <div
                   key={tab.id}
                   style={{
-                    width: '25%',
+                    flex: '1 1 0%',
                     height: 64,
                   }}
                   className="flex flex-col items-center justify-center text-[#71717a]"
@@ -264,7 +266,7 @@ export const LiquidGlassIsland: React.FC<LiquidGlassIslandProps> = ({
               clipPath: clipPathStyle,
               height: 64,
             }}
-            className="absolute inset-0 flex items-center justify-around z-20 pointer-events-none px-1.5"
+            className="absolute inset-0 flex items-center z-20 pointer-events-none px-[5px] w-full"
           >
             {TABS.map((tab) => {
               const IconComp = tab.icon;
@@ -272,10 +274,10 @@ export const LiquidGlassIsland: React.FC<LiquidGlassIslandProps> = ({
                 <div
                   key={tab.id}
                   style={{
-                    width: '25%',
+                    flex: '1 1 0%',
                     height: 64,
                   }}
-                  className="flex-1 h-full flex flex-col items-center justify-center"
+                  className="flex flex-col items-center justify-center"
                 >
                   <IconComp 
                     size={24} 
