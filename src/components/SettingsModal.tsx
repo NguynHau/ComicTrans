@@ -180,28 +180,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, o
             )}
           </div>
 
-          {/* Update Section */}
-          <div className="pt-2 border-t border-zinc-800 flex items-center justify-between text-xs">
-            <div className="flex items-center gap-1.5 text-zinc-400">
-              <Sparkles className="w-3.5 h-3.5 text-[#e06b3a]" />
-              <span>Phiên bản app: <strong className="text-zinc-200">v{CURRENT_VERSION.version}</strong></span>
-            </div>
-            {onOpenUpdateModal && (
-              <button
-                type="button"
-                onClick={() => {
-                  onClose();
-                  onOpenUpdateModal();
-                }}
-                className="text-[11px] font-semibold text-[#e06b3a] hover:text-orange-400 flex items-center gap-1 bg-[#e06b3a]/10 hover:bg-[#e06b3a]/20 px-2.5 py-1 rounded-lg border border-[#e06b3a]/30 transition-colors"
-              >
-                <RefreshCw className="w-3 h-3" />
-                <span>Kiểm tra cập nhật</span>
-              </button>
-            )}
-          </div>
-
-          <div className="flex items-center justify-between text-[11px] text-zinc-500">
+          <div className="flex items-center justify-between text-[11px] text-zinc-500 pt-2 border-t border-zinc-800">
             <span className="flex items-center gap-1">
               <HelpCircle className="w-3.5 h-3.5" />
               <span>Tự động chuyển đổi model dự phòng khi model chính bận</span>

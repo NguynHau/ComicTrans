@@ -1197,30 +1197,6 @@ export function App() {
                 </div>
               )}
             </div>
-
-            {/* System Update Section in Settings */}
-            <div className="pt-3 border-t border-zinc-800 space-y-2">
-              <div className="flex items-center justify-between bg-[#141417] p-3 rounded-xl border border-zinc-800 text-xs">
-                <div className="flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 text-[#e06b3a]" />
-                  <span className="text-zinc-300 font-medium">Phiên bản ứng dụng:</span>
-                </div>
-                <span className="font-mono font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20 text-[11px]">
-                  v{CURRENT_VERSION.version}
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveTab('update');
-                  handleRunCheckUpdate();
-                }}
-                className="w-full py-2.5 px-3 text-xs font-bold rounded-xl bg-[#141417] hover:bg-zinc-800 text-zinc-200 border border-zinc-700/80 flex items-center justify-center gap-2 transition-all shadow-sm"
-              >
-                <RefreshCw className="w-3.5 h-3.5 text-[#e06b3a]" />
-                <span>Kiểm tra cập nhật</span>
-              </button>
-            </div>
           </div>
         )}
       </main>
