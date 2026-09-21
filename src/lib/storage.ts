@@ -106,6 +106,23 @@ export async function saveCachedPageTranslation(data: PageCacheData): Promise<vo
   }
 }
 
+export async function clearPageCache(): Promise<void> {
+  try {
+    const db = await openDB();
+    if (db.objectStoreNames.contains(PAGE_CACHE_STORE)) {
+      const tx = db.transaction(PAGE_CACHE_STORE, 'readwrite');
+      const store = tx.objectStore(PAGE_CACHE_STORE);
+      await new Promise<void>((resolve, reject) => {
+        const req = store.clear();
+        req.onsuccess = () => resolve();
+        req.onerror = () => reject(req.error);
+      });
+    }
+  } catch (err) {
+    console.warn('Could not clear page cache:', err);
+  }
+}
+
 export async function saveRecentItemToStorage(item: RecentItem): Promise<void> {
   try {
     const db = await openDB();

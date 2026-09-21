@@ -45,6 +45,7 @@ import {
   saveCachedPageTranslation,
   saveBatchSession,
   getActiveBatchSession,
+  clearPageCache,
 } from './lib/storage';
 import { runBatchTranslationLoop } from './lib/batchProcessor';
 
@@ -84,6 +85,24 @@ export function App() {
     message?: string;
     model?: string;
   }>({ status: 'idle' });
+
+  const [isClearingCache, setIsClearingCache] = useState(false);
+  const [cacheClearedSuccess, setCacheClearedSuccess] = useState(false);
+
+  const handleClearCache = async () => {
+    if (confirm('Bạn có chắc muốn giải phóng hoàn toàn bộ nhớ đệm dịch thuật? Hành động này sẽ xoá toàn bộ dữ liệu ảnh dịch tạm thời trong trình duyệt.')) {
+      setIsClearingCache(true);
+      try {
+        await clearPageCache();
+        setCacheClearedSuccess(true);
+        setTimeout(() => setCacheClearedSuccess(false), 3000);
+      } catch (err) {
+        console.warn('Failed to clear cache:', err);
+      } finally {
+        setIsClearingCache(false);
+      }
+    }
+  };
 
   useEffect(() => {
     let isMounted = true;
@@ -1220,6 +1239,34 @@ export function App() {
                     <p className="text-[11px] text-rose-300/80 leading-tight mt-0.5">{settingsTestState.message}</p>
                   </div>
                 </div>
+              )}
+            </div>
+
+            {/* Clear Browser Cache & Disk Storage Section */}
+            <div className="space-y-3 pt-4 border-t border-zinc-800">
+              <div className="space-y-1">
+                <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-wider">
+                  Giải phóng dung lượng bộ nhớ
+                </h3>
+                <p className="text-[11px] text-zinc-500 leading-normal">
+                  Khi dịch truyện tranh, các trang ảnh đã dịch sẽ được lưu tạm trong trình duyệt để tăng tốc khi xem lại. Nếu trình duyệt báo đầy dung lượng, bạn có thể xóa sạch bộ nhớ tạm này.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleClearCache}
+                disabled={isClearingCache}
+                className="w-full py-2 px-3 text-xs font-bold rounded-xl bg-zinc-900 hover:bg-zinc-850 text-rose-400 border border-zinc-800 hover:border-zinc-700 flex items-center justify-center gap-1.5 transition-all shadow-sm active:scale-[0.98]"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>{isClearingCache ? 'Đang dọn dẹp...' : 'Xóa sạch bộ nhớ tạm dịch thuật'}</span>
+              </button>
+
+              {cacheClearedSuccess && (
+                <p className="text-[10px] text-emerald-400 text-center font-bold animate-fadeIn">
+                  ✓ Bộ nhớ đệm dịch thuật đã được làm sạch thành công!
+                </p>
               )}
             </div>
           </div>
