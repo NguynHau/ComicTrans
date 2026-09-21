@@ -44,6 +44,36 @@ export interface BatchCallbacks {
  * Auto-detects series, checks existing chapters in IndexedDB, resumes incomplete chapters first,
  * skips finished chapters, uses strict "Chap X" naming, and preserves exact source URLs.
  */
+/**
+ * Helper to write and store sequential diagnostic logs for batch processing
+ */
+async function addLog(
+  session: BatchTranslationSession,
+  msg: string,
+  callbacks: BatchCallbacks
+): Promise<void> {
+  const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const formattedLog = `[${timestamp}] ${msg}`;
+  console.log(`[RiXia Batch] ${formattedLog}`);
+  
+  session.logs = session.logs || [];
+  session.logs.push(formattedLog);
+  
+  // Truncate logs if they get too long to prevent IndexedDB storage bottleneck
+  if (session.logs.length > 500) {
+    session.logs = session.logs.slice(-500);
+  }
+  
+  session.lastUpdated = new Date().toISOString();
+  callbacks.onSessionUpdate({ ...session });
+  await saveBatchSession(session);
+}
+
+/**
+ * Executes a full multi-chapter batch translation loop:
+ * Auto-detects series, checks existing chapters in IndexedDB, resumes incomplete chapters first,
+ * skips finished chapters, uses strict "Chap X" naming, and preserves exact source URLs.
+ */
 export async function runBatchTranslationLoop(
   initialUrl: string,
   sourceLang: string,
@@ -105,10 +135,14 @@ export async function runBatchTranslationLoop(
         consecutiveErrors: 0,
         lastUpdated: new Date().toISOString(),
         maxChapters: 100, // Upper limit
+        logs: [],
       };
 
+  session.logs = session.logs || [];
   callbacks.onSessionUpdate({ ...session });
   await saveBatchSession(session);
+
+  await addLog(session, `[START] Bắt đầu phiên dịch tự động bộ truyện: "${seriesName}"`, callbacks);
 
   let currentUrl = session.currentUrl;
   let currentChapterNum = session.currentChapterNumber;
@@ -123,8 +157,10 @@ export async function runBatchTranslationLoop(
       currentChapterNum = extractChapterNumber(firstIncomplete.title);
       session.currentUrl = currentUrl;
       session.currentChapterNumber = currentChapterNum;
-      console.log(
-        `📌 [RiXia Batch] Phát hiện chap chưa hoàn thành trong thư viện (${firstIncomplete.title}). Ưu tiên xử lý lại.`
+      await addLog(
+        session,
+        `[PENDING] Phát hiện chương chưa hoàn tất: "${firstIncomplete.title}". Ưu tiên khôi phục tiến độ từ URL: ${currentUrl}`,
+        callbacks
       );
     }
   }
@@ -132,8 +168,7 @@ export async function runBatchTranslationLoop(
   while (loopCount < MAX_CHAPTERS) {
     if (callbacks.shouldAbort()) {
       session = { ...session, status: 'paused', lastUpdated: new Date().toISOString() };
-      callbacks.onSessionUpdate({ ...session });
-      await saveBatchSession(session);
+      await addLog(session, `[PAUSED] Tiến trình được tạm ngưng bởi người dùng.`, callbacks);
       return session;
     }
 
@@ -142,7 +177,7 @@ export async function runBatchTranslationLoop(
     const chapterNum = currentAnalysis.currentChapterNumber ?? currentChapterNum;
     const chapterTitle = `Chap ${chapterNum}`;
 
-    console.log(`🚀 [RiXia Batch] Bắt đầu xử lý: ${seriesName} - ${chapterTitle} (${currentUrl})`);
+    await addLog(session, `[PROCESSING] Đang tải chương: ${chapterTitle} (URL: ${currentUrl})`, callbacks);
 
     // Step A: Check if this chapter is ALREADY completed in IndexedDB
     const latestRecents = await getRecentItemsFromStorage();
@@ -156,7 +191,12 @@ export async function runBatchTranslationLoop(
     );
 
     if (alreadySaved) {
-      console.log(`⏩ [RiXia Batch] ${chapterTitle} đã dịch hoàn tất trước đó. Tự động chuyển tới chap tiếp theo...`);
+      await addLog(
+        session,
+        `[COMPLETED] Chương "${chapterTitle}" đã được dịch đầy đủ từ trước. Tự động bỏ qua và chuyển tiếp.`,
+        callbacks
+      );
+
       const summary: BatchChapterSummary = {
         chapterNumber: chapterNum,
         title: chapterTitle,
@@ -180,7 +220,7 @@ export async function runBatchTranslationLoop(
         await saveBatchSession(session);
         continue;
       } else {
-        console.log(`🎉 [RiXia Batch] Bộ truyện ${seriesName} đã hoàn thành! Tất cả các chap đã có trong thư viện.`);
+        await addLog(session, `[COMPLETED] Hoàn thành toàn bộ truyện! Tất cả các chương đã có trong thư viện.`, callbacks);
         session.status = 'completed';
         session.lastUpdated = new Date().toISOString();
         callbacks.onSessionUpdate({ ...session });
@@ -193,14 +233,13 @@ export async function runBatchTranslationLoop(
     // Step B: Scrape images for current chapter
     let resolvedImages: string[] = [];
     let scrapeRetryCount = 0;
-    const MAX_SCRAPE_RETRIES = 2;
+    const MAX_SCRAPE_RETRIES = 3;
     let scrapeError: any = null;
 
-    while (scrapeRetryCount <= MAX_SCRAPE_RETRIES) {
+    while (scrapeRetryCount < MAX_SCRAPE_RETRIES) {
       if (callbacks.shouldAbort()) {
         session = { ...session, status: 'paused', lastUpdated: new Date().toISOString() };
-        callbacks.onSessionUpdate({ ...session });
-        await saveBatchSession(session);
+        await addLog(session, `[PAUSED] Tiến trình tạm dừng trong khi tải ảnh.`, callbacks);
         return session;
       }
 
@@ -210,14 +249,18 @@ export async function runBatchTranslationLoop(
           resolvedImages = scrapeResult.images;
           break;
         } else {
-          throw new Error('NO_IMAGES_FOUND: Không tìm thấy ảnh truyện trong chap này.');
+          throw new Error('NO_IMAGES_FOUND: Không phát hiện được ảnh truyện nào trong chương này.');
         }
       } catch (err: any) {
         scrapeError = err;
         scrapeRetryCount++;
-        if (scrapeRetryCount <= MAX_SCRAPE_RETRIES) {
-          console.warn(`⚠️ [RiXia Batch] Thử tải lại ảnh chap (${scrapeRetryCount}/${MAX_SCRAPE_RETRIES}) sau 2s...`);
-          await new Promise((r) => setTimeout(r, 2000));
+        if (scrapeRetryCount < MAX_SCRAPE_RETRIES) {
+          await addLog(
+            session,
+            `[RETRYING] Thử tải lại ảnh chương (${scrapeRetryCount}/${MAX_SCRAPE_RETRIES}) sau 3 giây...`,
+            callbacks
+          );
+          await new Promise((r) => setTimeout(r, 3000));
         }
       }
     }
@@ -230,8 +273,7 @@ export async function runBatchTranslationLoop(
         scrapeError?.message?.includes('FETCH_FAILED');
 
       if (isEndOrNotFound && session.completedChapters.length > 0) {
-        // We reached the end of the comic series!
-        console.log(`🏁 [RiXia Batch] Đã hết các chap truyện hoặc không tìm thấy chap mới. Hoàn tất dịch toàn bộ!`);
+        await addLog(session, `[COMPLETED] Đã dịch đến chương cuối cùng của bộ truyện này.`, callbacks);
         session = {
           ...session,
           status: 'completed',
@@ -242,19 +284,24 @@ export async function runBatchTranslationLoop(
         callbacks.onBatchFinished(session);
         return session;
       } else {
-        const classified = classifyPipelineError(scrapeError || new Error('Không thể tải ảnh chap'));
+        const classified = classifyPipelineError(scrapeError || new Error('Không thể tải danh sách ảnh chương'));
         session = {
           ...session,
           status: 'failed',
-          errorMessage: `Dừng tại ${chapterTitle}: ${classified.message}`,
+          errorMessage: `Không thể tải ảnh tại ${chapterTitle}: ${classified.message}`,
           detailedError: classified,
           lastUpdated: new Date().toISOString(),
         };
-        callbacks.onSessionUpdate({ ...session });
-        await saveBatchSession(session);
+        await addLog(
+          session,
+          `[FAILED] Chương "${chapterTitle}" tải ảnh thất bại. Lỗi: ${classified.message}. Dừng tiến trình.`,
+          callbacks
+        );
         return session;
       }
     }
+
+    await addLog(session, `[PENDING] Phát hiện ${resolvedImages.length} trang ảnh hợp lệ. Bắt đầu dịch song song...`, callbacks);
 
     // Step C: Initialize MangaJob & MangaPages for current chapter
     const jobId = 'job_' + Date.now();
@@ -290,6 +337,8 @@ export async function runBatchTranslationLoop(
     let completedCount = 0;
     let isChapterAborted = false;
     let fatalError: DetailedError | null = null;
+    let lastErrorMessage = '';
+    const chapterStartTime = Date.now();
 
     const queue = chapterPages.map((page, index) => ({ page, index }));
     let nextQueueIndex = 0;
@@ -302,6 +351,7 @@ export async function runBatchTranslationLoop(
         }
 
         const currentTask = queue[nextQueueIndex++];
+        if (!currentTask) continue;
         const { page, index } = currentTask;
 
         // Update page status to processing
@@ -309,63 +359,109 @@ export async function runBatchTranslationLoop(
         chapterJob.current_page = index + 1;
         callbacks.onActiveJobUpdate({ ...chapterJob }, [...chapterPages]);
 
-        try {
-          // Check IndexedDB Cache first
-          const cacheKey = await generatePageCacheKey(page.source_image, sourceLang, targetLang);
-          const cached = await getCachedPageTranslation(cacheKey);
+        const pageStartTime = Date.now();
+        const MAX_PAGE_RETRIES = 3;
+        let attempt = 0;
+        let pageSuccess = false;
+        let ocr_results: OCRBoxItem[] = [];
+        let translations: TranslationItem[] = [];
+        let jpegBase64 = '';
+        let processed_image = '';
+        let pageErrorObj: any = null;
+        let pageClassifiedErr: DetailedError | null = null;
 
-          let ocr_results: OCRBoxItem[];
-          let translations: TranslationItem[];
-          let jpegBase64: string;
-          let processed_image: string;
+        while (attempt < MAX_PAGE_RETRIES && !isChapterAborted) {
+          attempt++;
+          try {
+            if (callbacks.shouldAbort()) {
+              isChapterAborted = true;
+              break;
+            }
 
-          if (cached && cached.ocr_results?.length > 0 && cached.translations?.length > 0) {
-            ocr_results = cached.ocr_results;
-            translations = cached.translations;
-            jpegBase64 = cached.source_image || page.source_image;
-            processed_image =
-              cached.processed_image ||
-              (await renderInpaintedTranslatedImageClient(jpegBase64, ocr_results, translations));
-          } else {
-            // Cache miss: Execute OCR -> Translation -> Inpainting
-            const rawJpeg = await ensureImageAsJpegBase64(page.source_image);
-            const apiRes = await runOcrAndTranslationClient(
-              rawJpeg,
-              sourceLang,
-              targetLang,
-              apiKey,
-              index + 1
-            );
+            // Apply exponential backoff starting from the 2nd attempt
+            if (attempt > 1) {
+              const delayMs = Math.min(12000, 3000 * Math.pow(2, attempt - 2));
+              await addLog(
+                session,
+                `[RETRYING] Trang ${index + 1}: Gặp lỗi tạm thời. Thử lại lần ${attempt}/${MAX_PAGE_RETRIES} sau ${delayMs / 1000}s...`,
+                callbacks
+              );
+              await new Promise((resolve) => setTimeout(resolve, delayMs));
+            }
 
-            ocr_results = apiRes.ocr_results;
-            translations = apiRes.translations;
-            jpegBase64 = apiRes.jpegBase64;
+            // Check Cache
+            const cacheKey = await generatePageCacheKey(page.source_image, sourceLang, targetLang);
+            const cached = await getCachedPageTranslation(cacheKey);
 
-            processed_image = await renderInpaintedTranslatedImageClient(
-              jpegBase64 || page.source_image,
-              ocr_results,
-              translations
-            );
+            if (cached && cached.ocr_results?.length > 0 && cached.translations?.length > 0) {
+              ocr_results = cached.ocr_results;
+              translations = cached.translations;
+              jpegBase64 = cached.source_image || page.source_image;
+              processed_image =
+                cached.processed_image ||
+                (await renderInpaintedTranslatedImageClient(jpegBase64, ocr_results, translations));
+            } else {
+              // Cache miss: Execute OCR -> Translation -> Inpainting
+              const rawJpeg = await ensureImageAsJpegBase64(page.source_image);
+              const apiRes = await runOcrAndTranslationClient(
+                rawJpeg,
+                sourceLang,
+                targetLang,
+                apiKey,
+                index + 1
+              );
 
-            // Cache page
-            await saveCachedPageTranslation({
-              cacheKey,
-              sourceLang,
-              targetLang,
-              ocr_results,
-              translations,
-              processed_image,
-              source_image: jpegBase64,
-              timestamp: Date.now(),
-            });
+              ocr_results = apiRes.ocr_results;
+              translations = apiRes.translations;
+              jpegBase64 = apiRes.jpegBase64;
+
+              processed_image = await renderInpaintedTranslatedImageClient(
+                jpegBase64 || page.source_image,
+                ocr_results,
+                translations
+              );
+
+              // Cache page
+              await saveCachedPageTranslation({
+                cacheKey,
+                sourceLang,
+                targetLang,
+                ocr_results,
+                translations,
+                processed_image,
+                source_image: jpegBase64,
+                timestamp: Date.now(),
+              });
+            }
+
+            pageSuccess = true;
+            break; // Success! Exit retry loop
+          } catch (pageErr: any) {
+            pageErrorObj = pageErr;
+            pageClassifiedErr = classifyPipelineError(pageErr);
+            lastErrorMessage = pageClassifiedErr.message;
+
+            // Stop immediately if API Key is completely invalid or missing, or if permission denied
+            if (
+              pageClassifiedErr.category === 'API_KEY_INVALID' ||
+              pageClassifiedErr.category === 'API_KEY_MISSING' ||
+              pageClassifiedErr.category === 'API_PERMISSION_DENIED'
+            ) {
+              fatalError = pageClassifiedErr;
+              isChapterAborted = true;
+              break;
+            }
           }
+        }
 
-          if (callbacks.shouldAbort()) {
-            isChapterAborted = true;
-            return;
-          }
+        if (callbacks.shouldAbort()) {
+          isChapterAborted = true;
+          return;
+        }
 
-          // Mark page as completed
+        const durationSec = ((Date.now() - pageStartTime) / 1000).toFixed(1);
+
+        if (pageSuccess) {
           chapterPages = chapterPages.map((p) =>
             p.id === page.id
               ? {
@@ -382,26 +478,30 @@ export async function runBatchTranslationLoop(
           completedCount++;
           chapterJob.completed_pages = completedCount;
           callbacks.onActiveJobUpdate({ ...chapterJob }, [...chapterPages]);
-        } catch (pageErr: any) {
-          console.error(`Batch page ${index + 1} error:`, pageErr);
-          const classified = classifyPipelineError(pageErr);
+
+          await addLog(
+            session,
+            `[COMPLETED] Trang ${index + 1}/${resolvedImages.length}: Thành công (${ocr_results.length} thoại) trong ${durationSec}s.`,
+            callbacks
+          );
+        } else {
           chapterPages = chapterPages.map((p) =>
             p.id === page.id
               ? {
                   ...p,
                   status: 'failed',
-                  error_message: classified.message,
-                  detailed_error: classified,
+                  error_message: lastErrorMessage,
+                  detailed_error: pageClassifiedErr || undefined,
                 }
               : p
           );
           callbacks.onActiveJobUpdate({ ...chapterJob }, [...chapterPages]);
 
-          if (classified.category === 'API_KEY_INVALID' || classified.category === 'API_KEY_MISSING') {
-            fatalError = classified;
-            isChapterAborted = true;
-            break;
-          }
+          await addLog(
+            session,
+            `[FAILED] Trang ${index + 1}/${resolvedImages.length}: Thất bại hoàn toàn sau ${MAX_PAGE_RETRIES} lượt thử. Lỗi: ${lastErrorMessage}`,
+            callbacks
+          );
         }
       }
     };
@@ -412,8 +512,7 @@ export async function runBatchTranslationLoop(
 
     if (callbacks.shouldAbort()) {
       session = { ...session, status: 'paused', lastUpdated: new Date().toISOString() };
-      callbacks.onSessionUpdate({ ...session });
-      await saveBatchSession(session);
+      await addLog(session, `[PAUSED] Đã dừng tiến trình dịch hàng loạt.`, callbacks);
       return session;
     }
 
@@ -425,13 +524,15 @@ export async function runBatchTranslationLoop(
         detailedError: fatalError as DetailedError,
         lastUpdated: new Date().toISOString(),
       };
-      callbacks.onSessionUpdate({ ...session });
-      await saveBatchSession(session);
+      await addLog(session, `[FAILED] Lỗi hệ thống nghiêm trọng: ${(fatalError as DetailedError).message}`, callbacks);
       return session;
     }
 
-    // Step E: If chapter produced completed pages, save into MangaFolder
-    if (completedCount > 0) {
+    const allPagesSucceeded = completedCount === resolvedImages.length;
+    const chapterTotalTime = ((Date.now() - chapterStartTime) / 1000).toFixed(1);
+
+    // Step E: STRICT VERIFICATION: ONLY mark as COMPLETED if all pages completed successfully
+    if (allPagesSucceeded) {
       const recentItem: RecentItem = {
         id: jobId,
         title: chapterTitle,
@@ -467,19 +568,51 @@ export async function runBatchTranslationLoop(
       callbacks.onChapterCompleted(summary, recentItem);
       callbacks.onSessionUpdate({ ...session });
       await saveBatchSession(session);
+
+      await addLog(
+        session,
+        `[COMPLETED] Hoàn thành chương "${chapterTitle}" (${completedCount}/${resolvedImages.length} trang) trong ${chapterTotalTime}s.`,
+        callbacks
+      );
     } else {
-      // 0 pages succeeded
-      session.consecutiveErrors = (session.consecutiveErrors || 0) + 1;
-      if (session.consecutiveErrors >= 2) {
-        session.status = 'failed';
-        session.errorMessage = `Không thể hoàn tất dịch ${chapterTitle}.`;
-        callbacks.onSessionUpdate({ ...session });
-        await saveBatchSession(session);
-        return session;
-      }
+      // PARTIAL / FAILED chapter processing
+      // We save the partial work to IndexedDB so they don't have to translate succeeded pages again
+      const recentItem: RecentItem = {
+        id: jobId,
+        title: chapterTitle,
+        folderId: folder.id,
+        folderName: folder.name,
+        sourceUrl: currentUrl,
+        thumbnail: chapterPages[0]?.processed_image || resolvedImages[0],
+        totalPages: resolvedImages.length,
+        completedPages: completedCount,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        job: {
+          ...chapterJob,
+          status: 'failed',
+          completed_pages: completedCount,
+          error_message: `Dịch dở dang: chỉ hoàn thành ${completedCount}/${resolvedImages.length} trang.`,
+        },
+        pages: chapterPages,
+      };
+
+      await saveRecentItemToStorage(recentItem);
+
+      session.status = 'failed';
+      session.errorMessage = `Dịch dở dang tại ${chapterTitle}: Chỉ hoàn tất ${completedCount}/${resolvedImages.length} trang. Lỗi: ${lastErrorMessage}`;
+      session.lastUpdated = new Date().toISOString();
+      callbacks.onSessionUpdate({ ...session });
+      await saveBatchSession(session);
+
+      await addLog(
+        session,
+        `[PARTIAL] Chương "${chapterTitle}" chưa dịch hoàn thành (${completedCount}/${resolvedImages.length} trang thành công). Tạm thời dừng tiến trình để chờ người dùng khắc phục mạng/API và nhấn "Thử lại".`,
+        callbacks
+      );
+      return session;
     }
 
-    // Step F: Compute next chapter URL
+    // Step F: Compute next chapter URL (Only reached if current chapter is 100% completed!)
     if (currentAnalysis.isRecognized && currentAnalysis.nextUrl) {
       currentUrl = currentAnalysis.nextUrl;
       currentChapterNum = currentAnalysis.nextChapterNumber;
@@ -488,10 +621,10 @@ export async function runBatchTranslationLoop(
       callbacks.onSessionUpdate({ ...session });
       await saveBatchSession(session);
 
-      // Polite pause between chapters (800ms)
-      await new Promise((r) => setTimeout(r, 800));
+      // Polite pause between chapters to respect API rate limits (1200ms)
+      await new Promise((r) => setTimeout(r, 1200));
     } else {
-      console.log(`ℹ️ [RiXia Batch] URL tiếp theo không theo quy luật tăng số đơn giản. Tạm dừng tiến trình batch.`);
+      await addLog(session, `[COMPLETED] Đã đến chương cuối cùng (Không tìm thấy liên kết chương tiếp theo). Hoàn tất!`, callbacks);
       session.status = 'completed';
       session.lastUpdated = new Date().toISOString();
       callbacks.onSessionUpdate({ ...session });

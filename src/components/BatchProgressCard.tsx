@@ -12,6 +12,9 @@ import {
   ChevronRight,
   RotateCcw,
   Sparkles,
+  Terminal,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { BatchTranslationSession, MangaJob } from '../types';
 
@@ -34,6 +37,9 @@ export const BatchProgressCard: React.FC<BatchProgressCardProps> = ({
   onOpenFolder,
   onReadChapter,
 }) => {
+  const [showLogs, setShowLogs] = React.useState(true);
+  const logsEndRef = React.useRef<HTMLDivElement>(null);
+
   const isRunning = session.status === 'running';
   const isPaused = session.status === 'paused';
   const isCompleted = session.status === 'completed';
@@ -51,6 +57,13 @@ export const BatchProgressCard: React.FC<BatchProgressCardProps> = ({
       : isCompleted
       ? 100
       : 0;
+
+  // Auto-scroll logs to bottom whenever they change or are toggled
+  React.useEffect(() => {
+    if (showLogs && logsEndRef.current) {
+      logsEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [session.logs, showLogs]);
 
   return (
     <div className="w-full max-w-md mx-auto bg-[#141417] border border-zinc-800 rounded-2xl p-4 shadow-xl text-zinc-100 space-y-3.5 animate-fadeIn">
@@ -196,6 +209,48 @@ export const BatchProgressCard: React.FC<BatchProgressCardProps> = ({
         <div className="p-3 rounded-xl bg-rose-950/30 border border-rose-500/30 text-rose-200 text-xs flex items-start gap-2 animate-fadeIn">
           <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0 mt-0.5" />
           <div className="leading-relaxed">{session.errorMessage}</div>
+        </div>
+      )}
+
+      {/* Logs Terminal */}
+      {session.logs && session.logs.length > 0 && (
+        <div className="space-y-2 pt-2 border-t border-zinc-800/80">
+          <button
+            type="button"
+            onClick={() => setShowLogs(!showLogs)}
+            className="w-full flex items-center justify-between text-xs text-zinc-400 font-bold hover:text-zinc-200 cursor-pointer"
+          >
+            <div className="flex items-center gap-1.5">
+              <Terminal className="w-3.5 h-3.5 text-zinc-500" />
+              <span>Nhật ký dịch thuật ({session.logs.length})</span>
+            </div>
+            {showLogs ? (
+              <ChevronUp className="w-3.5 h-3.5" />
+            ) : (
+              <ChevronDown className="w-3.5 h-3.5" />
+            )}
+          </button>
+
+          {showLogs && (
+            <div className="w-full h-40 bg-black/50 border border-zinc-800 rounded-xl p-2.5 font-mono text-[10px] text-zinc-300 overflow-y-auto space-y-1 scroll-smooth">
+              {session.logs.map((log, i) => {
+                let colorClass = 'text-zinc-400';
+                if (log.includes('[START]')) colorClass = 'text-sky-400 font-semibold';
+                else if (log.includes('[COMPLETED]')) colorClass = 'text-emerald-400';
+                else if (log.includes('[FAILED]')) colorClass = 'text-rose-400 font-bold';
+                else if (log.includes('[RETRYING]')) colorClass = 'text-amber-400 font-semibold animate-pulse';
+                else if (log.includes('[PENDING]')) colorClass = 'text-zinc-500';
+                else if (log.includes('[PROCESSING]')) colorClass = 'text-orange-400';
+
+                return (
+                  <div key={i} className={`leading-relaxed break-all ${colorClass}`}>
+                    {log}
+                  </div>
+                );
+              })}
+              <div ref={logsEndRef} />
+            </div>
+          )}
         </div>
       )}
     </div>

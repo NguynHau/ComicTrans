@@ -114,6 +114,16 @@ export const FolderChaptersModal: React.FC<FolderChaptersModalProps> = ({
                     <h4 className="text-xs sm:text-sm font-bold text-zinc-200 truncate group-hover:text-[#e06b3a] transition-colors">
                       {item.title}
                     </h4>
+                    {item.sourceUrl && item.sourceUrl.startsWith('http') && (
+                      <span
+                        onClick={(e) => handleOpenSourceUrl(item.sourceUrl!, e)}
+                        className="text-xs text-[#9CA3AF] hover:text-[#ff7e40] hover:underline font-normal truncate block mt-0.5 cursor-pointer max-w-full"
+                        style={{ color: '#9CA3AF' }}
+                        title={item.sourceUrl}
+                      >
+                        {item.sourceUrl}
+                      </span>
+                    )}
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-[10px] text-zinc-400">
                         Đã dịch:{' '}
@@ -121,44 +131,13 @@ export const FolderChaptersModal: React.FC<FolderChaptersModalProps> = ({
                           {item.completedPages}/{item.totalPages} trang
                         </span>
                       </span>
-
-                      {/* Source URL display button */}
-                      {item.sourceUrl && item.sourceUrl.startsWith('http') ? (
-                        <button
-                          type="button"
-                          onClick={(e) => handleOpenSourceUrl(item.sourceUrl!, e)}
-                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-zinc-800/90 hover:bg-orange-500/20 text-[10px] text-zinc-300 hover:text-orange-300 border border-zinc-700/60 hover:border-orange-500/40 transition-colors"
-                          title={`Mở link gốc: ${item.sourceUrl}`}
-                        >
-                          <ExternalLink className="w-3 h-3 text-[#e06b3a]" />
-                          <span>Link gốc</span>
-                        </button>
-                      ) : (
-                        <span
-                          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] bg-zinc-900 text-zinc-500 border border-zinc-800"
-                          title="Tệp tự tải lên hoặc chưa xác minh link web gốc"
-                        >
-                          <Link2 className="w-2.5 h-2.5" />
-                          <span>Tải lên</span>
-                        </span>
-                      )}
                     </div>
                   </div>
                   <p className="text-[10px] text-zinc-500 font-medium">{item.timestamp}</p>
                 </div>
 
-                {/* Action Buttons: Open Link & Delete Chapter */}
+                {/* Action Buttons: Delete Chapter */}
                 <div className="absolute top-3 right-3 flex items-center gap-1">
-                  {item.sourceUrl && item.sourceUrl.startsWith('http') && (
-                    <button
-                      type="button"
-                      onClick={(e) => handleOpenSourceUrl(item.sourceUrl!, e)}
-                      className="p-1.5 rounded-lg text-zinc-400 hover:text-orange-400 hover:bg-orange-500/10 transition-colors"
-                      title="Mở trang gốc trên web"
-                    >
-                      <ExternalLink className="w-3.5 h-3.5" />
-                    </button>
-                  )}
                   <button
                     type="button"
                     onClick={(e) => onDeleteChapter(item.id, e)}

@@ -71,14 +71,19 @@ export interface MangaFolder {
   id: string;
   name: string;
   createdAt: string;
+  seriesUrl?: string;
+  seriesKey?: string;
+  lastUpdated?: string;
 }
 
 export interface RecentItem {
   id: string;
-  title: string;
+  title: string; // Strictly formatted as "Chap X" (e.g., "Chap 0", "Chap 1", "Chap 2")
+  chapterNumber?: number; // Parsed numerical value (e.g. 0, 1, 2, 5.5)
   folderId?: string;
   folderName?: string;
-  sourceUrl?: string;
+  sourceUrl?: string; // Exact original chapter URL
+  sourceUrlVerified?: boolean;
   thumbnail?: string;
   totalPages: number;
   completedPages: number;
@@ -89,8 +94,8 @@ export interface RecentItem {
 
 export interface BatchChapterSummary {
   chapterNumber: number;
-  title: string;
-  url: string;
+  title: string; // "Chap X"
+  url: string; // Exact original chapter URL
   pageCount: number;
   completedAt: string;
   recentItemId: string;
@@ -99,6 +104,8 @@ export interface BatchChapterSummary {
 export interface BatchTranslationSession {
   id: string;
   seriesName: string;
+  seriesKey?: string;
+  seriesBaseUrl?: string;
   folderId: string;
   sourceLang: string;
   targetLang: string;
@@ -106,10 +113,12 @@ export interface BatchTranslationSession {
   currentUrl: string;
   currentChapterNumber: number;
   completedChapters: BatchChapterSummary[];
+  missingChaptersToProcess?: number[];
   status: 'idle' | 'running' | 'paused' | 'completed' | 'failed' | 'stopped';
   errorMessage?: string;
   detailedError?: DetailedError;
   consecutiveErrors: number;
   lastUpdated: string;
   maxChapters?: number;
+  logs?: string[]; // Persistent diagnostic logs
 }
