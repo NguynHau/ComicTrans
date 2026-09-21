@@ -60,6 +60,7 @@ export function App() {
   const [isUpdateModalOpen, setIsUpdateModalOpen] = useState<boolean>(false);
 
   const [activeTab, setActiveTab] = useState<'home' | 'manga' | 'update' | 'settings'>('home');
+  const [showReader, setShowReader] = useState(false);
   const [recents, setRecents] = useState<RecentItem[]>([]);
   const [folders, setFolders] = useState<MangaFolder[]>([]);
   const [isCreateFolderModalOpen, setIsCreateFolderModalOpen] = useState(false);
@@ -390,6 +391,9 @@ export function App() {
         status: 'processing',
         total_pages: resolvedImages.length,
       });
+      
+      // Explicitly show reader on start
+      setShowReader(true);
 
       // 4. Process pages concurrently with optimal worker pool (Concurrency: 4) & IndexedDB Cache
       const CONCURRENCY_LIMIT = 4;
@@ -622,6 +626,7 @@ export function App() {
   const handleResumeRecent = (item: RecentItem) => {
     setActiveJob(item.job);
     setPages(item.pages);
+    setShowReader(true);
   };
 
   const handleRetryPage = async (pageId: string) => {
@@ -736,6 +741,7 @@ export function App() {
   const handleReset = () => {
     setActiveJob(null);
     setPages([]);
+    setShowReader(false);
     setErrorMessage(null);
     setDetailedError(null);
   };
@@ -887,13 +893,16 @@ export function App() {
                 />
 
                 {/* If pages are loaded/processing, show reader */}
-                {hasReaderView && (
+                {showReader && (
                   <MangaReader
                     job={activeJob}
                     pages={pages}
                     onRetryPage={handleRetryPage}
                     onUpdateDialogue={handleUpdateDialogue}
-                    onReset={handleReset}
+                    onReset={() => {
+                      setShowReader(false);
+                      handleReset();
+                    }}
                   />
                 )}
               </div>
