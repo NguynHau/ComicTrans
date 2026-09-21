@@ -1,7 +1,29 @@
 import React, { useState, useEffect } from 'react';
-import { X, ChevronLeft, ChevronRight, BookOpen, ExternalLink } from 'lucide-react';
-import { RecentItem } from '../types';
+import {
+  X,
+  ChevronLeft,
+  ChevronRight,
+  BookOpen,
+  ExternalLink,
+  Sliders,
+  Download,
+  CheckCircle2,
+  Loader2,
+  Maximize2,
+  Scroll,
+} from 'lucide-react';
+import { RecentItem, MangaPage } from '../types';
 import { sortChapters } from '../lib/chapterSort';
+import {
+  ReaderSettingsPanel,
+  ReaderSettings,
+  getFilterStyle,
+} from './ReaderSettingsPanel';
+import {
+  downloadChapterOffline,
+  isChapterCachedOffline,
+  getOfflineChapterPages,
+} from '../lib/offlineManager';
 
 interface SavedMangaViewerProps {
   item: RecentItem;
@@ -17,12 +39,43 @@ export const SavedMangaViewer: React.FC<SavedMangaViewerProps> = ({
   onSelectChapter,
 }) => {
   const [currentChapter, setCurrentChapter] = useState<RecentItem>(item);
+  const [pages, setPages] = useState<MangaPage[]>(item.pages || []);
+  const [viewMode, setViewMode] = useState<'single' | 'scroll'>('scroll');
+  const [currentPageIdx, setCurrentPageIdx] = useState(0);
+
+  // Advanced Reader Settings
+  const [showSettings, setShowSettings] = useState(false);
+  const [readerSettings, setReaderSettings] = useState<ReaderSettings>({
+    brightness: 100,
+    filter: 'none',
+  });
+
+  // Offline Caching States
+  const [isOfflineCached, setIsOfflineCached] = useState(false);
+  const [isDownloadingOffline, setIsDownloadingOffline] = useState(false);
+  const [offlineProgress, setOfflineProgress] = useState<{ current: number; total: number } | null>(null);
 
   useEffect(() => {
     setCurrentChapter(item);
+    setPages(item.pages || []);
+    setCurrentPageIdx(0);
   }, [item]);
 
-  const pages = currentChapter.pages || [];
+  // Check offline status for current chapter
+  useEffect(() => {
+    if (!currentChapter?.id) return;
+    isChapterCachedOffline(currentChapter.id).then((cached) => {
+      setIsOfflineCached(cached);
+      // If cached and user is offline or pages are missing, load from offline cache
+      if (cached && (!item.pages?.length || !navigator.onLine)) {
+        getOfflineChapterPages(currentChapter.id).then((cachedPages) => {
+          if (cachedPages && cachedPages.length > 0) {
+            setPages(cachedPages);
+          }
+        });
+      }
+    });
+  }, [currentChapter?.id]);
 
   // Sort folder items naturally from Chap 1 -> Chap N
   const itemsInFolder = sortChapters(
@@ -31,10 +84,6 @@ export const SavedMangaViewer: React.FC<SavedMangaViewerProps> = ({
   );
 
   const currentIndex = itemsInFolder.findIndex((x) => x.id === currentChapter.id);
-
-  // In ascending list [Chap 1, Chap 2, Chap 3...]:
-  // Prev Chapter is index - 1 (e.g., Chap 1 when currently reading Chap 2)
-  // Next Chapter is index + 1 (e.g., Chap 3 when currently reading Chap 2)
   const prevChapter = currentIndex > 0 ? itemsInFolder[currentIndex - 1] : null;
   const nextChapter =
     currentIndex >= 0 && currentIndex < itemsInFolder.length - 1
@@ -44,6 +93,8 @@ export const SavedMangaViewer: React.FC<SavedMangaViewerProps> = ({
   const handleGoToPrev = () => {
     if (prevChapter) {
       setCurrentChapter(prevChapter);
+      setPages(prevChapter.pages || []);
+      setCurrentPageIdx(0);
       if (onSelectChapter) onSelectChapter(prevChapter);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
@@ -52,6 +103,8 @@ export const SavedMangaViewer: React.FC<SavedMangaViewerProps> = ({
   const handleGoToNext = () => {
     if (nextChapter) {
       setCurrentChapter(nextChapter);
+      setPages(nextChapter.pages || []);
+      setCurrentPageIdx(0);
       if (onSelectChapter) onSelectChapter(nextChapter);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
@@ -63,60 +116,221 @@ export const SavedMangaViewer: React.FC<SavedMangaViewerProps> = ({
     }
   };
 
+  const handleDownloadOffline = async () => {
+    if (!pages.length || isDownloadingOffline) return;
+    setIsDownloadingOffline(true);
+    setOfflineProgress({ current: 0, total: pages.length });
+
+    const res = await downloadChapterOffline(
+      currentChapter.id,
+      currentChapter.title,
+      pages,
+      (current, total) => setOfflineProgress({ current, total })
+    );
+
+    setIsDownloadingOffline(false);
+    setOfflineProgress(null);
+    if (res.success) {
+      setIsOfflineCached(true);
+    }
+  };
+
+  const filterStyle = getFilterStyle(readerSettings);
+  const currentSinglePage = pages[currentPageIdx] || pages[0];
+
   return (
     <div className="fixed inset-0 z-[200] bg-black overflow-y-auto flex flex-col items-center animate-fadeIn">
-      {/* Top Bar with Safe Area Top Padding to avoid phone notifications/notch */}
-      <div className="sticky top-0 left-0 right-0 z-[210] w-full pt-12 sm:pt-14 pb-3 px-4 bg-gradient-to-b from-black via-black/90 to-transparent backdrop-blur-md flex items-center justify-between border-b border-zinc-800/60">
-        <div className="flex items-center gap-2.5 min-w-0 pr-2">
-          <BookOpen className="w-4 h-4 text-[#e06b3a] flex-shrink-0" />
-          <div className="min-w-0">
-            <div className="flex items-center gap-2 truncate">
-              <h3 className="text-xs sm:text-sm font-extrabold text-zinc-100 truncate">
-                {currentChapter.title}
-              </h3>
-              {currentChapter.sourceUrl && currentChapter.sourceUrl.startsWith('http') && (
-                <button
-                  type="button"
-                  onClick={handleOpenSourceUrl}
-                  className="p-1 text-zinc-400 hover:text-orange-400 transition-colors flex-shrink-0"
-                  title={`Mở link gốc: ${currentChapter.sourceUrl}`}
-                >
-                  <ExternalLink className="w-3.5 h-3.5" />
-                </button>
+      {/* Top Bar with Safe Area Top Padding */}
+      <div className="sticky top-0 left-0 right-0 z-[210] w-full pt-10 sm:pt-12 pb-3 px-3 sm:px-4 bg-gradient-to-b from-black via-black/95 to-transparent backdrop-blur-md flex flex-col gap-2 border-b border-zinc-800/60">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 min-w-0 pr-2">
+            <BookOpen className="w-4 h-4 text-[#e06b3a] flex-shrink-0" />
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 truncate">
+                <h3 className="text-xs sm:text-sm font-extrabold text-zinc-100 truncate">
+                  {currentChapter.title}
+                </h3>
+                {currentChapter.sourceUrl && currentChapter.sourceUrl.startsWith('http') && (
+                  <button
+                    type="button"
+                    onClick={handleOpenSourceUrl}
+                    className="p-1 text-zinc-400 hover:text-orange-400 transition-colors flex-shrink-0"
+                    title={`Mở link gốc: ${currentChapter.sourceUrl}`}
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+              {currentChapter.folderName && (
+                <p className="text-[10px] text-zinc-400 truncate">
+                  {currentChapter.folderName}
+                </p>
               )}
             </div>
-            {currentChapter.folderName && (
-              <p className="text-[10px] text-zinc-400 truncate">
-                {currentChapter.folderName}
-              </p>
-            )}
+          </div>
+
+          <div className="flex items-center gap-1.5 flex-shrink-0">
+            {/* Nút Tải Offline */}
+            <button
+              onClick={handleDownloadOffline}
+              disabled={pages.length === 0 || isDownloadingOffline}
+              className={`py-1.5 px-2.5 rounded-xl border text-[11px] font-bold transition-all flex items-center gap-1 shadow-sm ${
+                isOfflineCached
+                  ? 'bg-emerald-950/60 border-emerald-500/50 text-emerald-300'
+                  : 'bg-zinc-900 border-zinc-700/80 text-zinc-200 hover:bg-zinc-800 hover:text-white'
+              }`}
+              title="Lưu vào bộ nhớ cache để đọc khi không có mạng"
+            >
+              {isDownloadingOffline ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-orange-400" />
+                  <span className="hidden sm:inline">
+                    {offlineProgress ? `${offlineProgress.current}/${offlineProgress.total}` : 'Tải...'}
+                  </span>
+                </>
+              ) : isOfflineCached ? (
+                <>
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                  <span className="hidden sm:inline">Offline OK</span>
+                </>
+              ) : (
+                <>
+                  <Download className="w-3.5 h-3.5 text-[#e06b3a]" />
+                  <span className="hidden sm:inline">Tải Offline</span>
+                </>
+              )}
+            </button>
+
+            {/* Nút Tùy chỉnh (Độ sáng, ban đêm, sepia) */}
+            <button
+              onClick={() => setShowSettings((prev) => !prev)}
+              className={`p-2 rounded-xl border transition-all ${
+                showSettings
+                  ? 'bg-[#e06b3a] text-white border-orange-500 shadow-md'
+                  : 'bg-zinc-900/90 border-zinc-700/80 text-zinc-200 hover:bg-zinc-800'
+              }`}
+              title="Cài đặt độ sáng, chế độ ban đêm, sepia"
+            >
+              <Sliders className="w-4 h-4" />
+            </button>
+
+            {/* Nút Đóng */}
+            <button
+              onClick={onClose}
+              className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-zinc-900/90 border border-zinc-700/80 text-zinc-200 flex items-center justify-center hover:bg-zinc-800 hover:text-white transition-all shadow-xl"
+              title="Thoát đọc truyện"
+            >
+              <X className="w-4 h-4 sm:w-5 sm:h-5" />
+            </button>
           </div>
         </div>
 
-        <button
-          onClick={onClose}
-          className="w-9 h-9 rounded-xl bg-zinc-900/90 border border-zinc-700/80 text-zinc-200 flex items-center justify-center hover:bg-zinc-800 hover:text-white transition-all shadow-xl flex-shrink-0"
-          title="Thoát đọc truyện"
-        >
-          <X className="w-5 h-5" />
-        </button>
-      </div>
+        {/* Row 2: Chế độ Lật trang vs Cuộn */}
+        <div className="flex items-center justify-between gap-2 max-w-2xl w-full mx-auto">
+          <div className="flex items-center bg-zinc-900/90 border border-zinc-800 rounded-xl p-0.5 gap-1 text-xs">
+            <button
+              onClick={() => setViewMode('scroll')}
+              className={`py-1 px-2.5 rounded-lg font-semibold flex items-center gap-1 transition-all ${
+                viewMode === 'scroll'
+                  ? 'bg-[#e06b3a] text-white shadow-sm'
+                  : 'text-zinc-400 hover:text-zinc-200'
+              }`}
+            >
+              <Scroll className="w-3 h-3" />
+              <span>Cuộn dọc</span>
+            </button>
+            <button
+              onClick={() => setViewMode('single')}
+              className={`py-1 px-2.5 rounded-lg font-semibold flex items-center gap-1 transition-all ${
+                viewMode === 'single'
+                  ? 'bg-[#e06b3a] text-white shadow-sm'
+                  : 'text-zinc-400 hover:text-zinc-200'
+              }`}
+            >
+              <Maximize2 className="w-3 h-3" />
+              <span>Lật trang</span>
+            </button>
+          </div>
 
-      {/* Main Reader Image List */}
-      <div className="w-full max-w-2xl flex flex-col items-center bg-black min-h-screen pb-28 pt-2">
-        {pages.map((p, idx) => (
-          <div key={p.id || idx} className="w-full flex justify-center border-b border-zinc-900 last:border-b-0">
-            <img
-              src={p.processed_image || p.source_image}
-              alt={`Trang ${p.page_number}`}
-              className="w-full h-auto object-contain select-none"
-              referrerPolicy="no-referrer"
+          {viewMode === 'single' && pages.length > 0 && (
+            <div className="text-[11px] font-mono text-zinc-400 bg-zinc-900/80 px-2.5 py-1 rounded-lg border border-zinc-800">
+              Trang {currentPageIdx + 1} / {pages.length}
+            </div>
+          )}
+        </div>
+
+        {/* Expandable Reader Settings Panel */}
+        {showSettings && (
+          <div className="max-w-2xl w-full mx-auto">
+            <ReaderSettingsPanel
+              settings={readerSettings}
+              onUpdateSettings={(newVals) =>
+                setReaderSettings((prev) => ({ ...prev, ...newVals }))
+              }
+              onClose={() => setShowSettings(false)}
             />
           </div>
-        ))}
-        {pages.length === 0 && (
-          <div className="py-20 text-center text-zinc-500 text-sm">
-            Không có trang truyện nào được lưu trữ.
+        )}
+      </div>
+
+      {/* Main Reader Container */}
+      <div className="w-full max-w-2xl flex flex-col items-center bg-black min-h-screen pb-28 pt-2">
+        {viewMode === 'scroll' ? (
+          /* CONTINUOUS VERTICAL SCROLL */
+          <div className="w-full flex flex-col items-center">
+            {pages.map((p, idx) => (
+              <div key={p.id || idx} className="w-full flex justify-center border-b border-zinc-900 last:border-b-0">
+                <img
+                  src={p.processed_image || p.source_image}
+                  alt={`Trang ${p.page_number}`}
+                  className="w-full h-auto object-contain select-none"
+                  style={filterStyle}
+                  referrerPolicy="no-referrer"
+                />
+              </div>
+            ))}
+            {pages.length === 0 && (
+              <div className="py-20 text-center text-zinc-500 text-sm">
+                Không có trang truyện nào được lưu trữ.
+              </div>
+            )}
+          </div>
+        ) : (
+          /* SINGLE PAGE FLIP MODE */
+          <div className="relative w-full min-h-[500px] flex items-center justify-center bg-black">
+            {currentSinglePage ? (
+              <div className="relative w-full flex justify-center">
+                <img
+                  src={currentSinglePage.processed_image || currentSinglePage.source_image}
+                  alt={`Trang ${currentSinglePage.page_number}`}
+                  className="w-full h-auto object-contain select-none"
+                  style={filterStyle}
+                  referrerPolicy="no-referrer"
+                />
+              </div>
+            ) : (
+              <div className="py-20 text-center text-zinc-500 text-sm">
+                Không có trang nào.
+              </div>
+            )}
+
+            {/* Tap/Click navigation zones */}
+            <button
+              onClick={() => setCurrentPageIdx((prev) => Math.max(0, prev - 1))}
+              disabled={currentPageIdx === 0}
+              className="absolute left-0 top-0 bottom-0 w-20 sm:w-28 bg-gradient-to-r from-black/40 to-transparent opacity-0 hover:opacity-100 transition-opacity flex items-center justify-start pl-3 text-white disabled:pointer-events-none"
+              title="Trang trước"
+            >
+              <ChevronLeft className="w-8 h-8" />
+            </button>
+            <button
+              onClick={() => setCurrentPageIdx((prev) => Math.min(pages.length - 1, prev + 1))}
+              disabled={currentPageIdx >= pages.length - 1}
+              className="absolute right-0 top-0 bottom-0 w-20 sm:w-28 bg-gradient-to-l from-black/40 to-transparent opacity-0 hover:opacity-100 transition-opacity flex items-center justify-end pr-3 text-white disabled:pointer-events-none"
+              title="Trang tiếp theo"
+            >
+              <ChevronRight className="w-8 h-8" />
+            </button>
           </div>
         )}
       </div>

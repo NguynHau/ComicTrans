@@ -1,5 +1,4 @@
-import React, { useState } from 'react';
-import localforage from 'localforage';
+import React, { useState, useEffect } from 'react';
 import {
   ChevronLeft,
   ChevronRight,
@@ -10,9 +9,23 @@ import {
   Scroll,
   BookmarkCheck,
   RefreshCw,
+  Sliders,
+  Download,
+  CheckCircle2,
+  Loader2,
 } from 'lucide-react';
 import { MangaJob, MangaPage } from '../types';
 import { SaveFolderModal } from './SaveFolderModal';
+import {
+  ReaderSettingsPanel,
+  ReaderSettings,
+  getFilterStyle,
+} from './ReaderSettingsPanel';
+import {
+  downloadChapterOffline,
+  isChapterCachedOffline,
+  getOfflineChapterPages,
+} from '../lib/offlineManager';
 
 interface MangaReaderProps {
   job: MangaJob;
@@ -24,7 +37,7 @@ interface MangaReaderProps {
 
 export const MangaReader: React.FC<MangaReaderProps> = ({
   job,
-  pages,
+  pages: initialPages,
   onRetryPage,
   onReset,
 }) => {
@@ -32,11 +45,39 @@ export const MangaReader: React.FC<MangaReaderProps> = ({
   const [viewMode, setViewMode] = useState<'single' | 'scroll'>('single');
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [isSaveModalOpen, setIsSaveModalOpen] = useState(false);
-  
-  // Advanced settings state
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [brightness, setBrightness] = useState(100);
-  const [filterType, setFilterType] = useState<'none' | 'sepia' | 'blue-light'>('none');
+
+  // Advanced Reader Settings
+  const [showSettings, setShowSettings] = useState(false);
+  const [readerSettings, setReaderSettings] = useState<ReaderSettings>({
+    brightness: 100,
+    filter: 'none',
+  });
+
+  // Offline Mode States
+  const [pages, setPages] = useState<MangaPage[]>(initialPages);
+  const [isOfflineCached, setIsOfflineCached] = useState(false);
+  const [isDownloadingOffline, setIsDownloadingOffline] = useState(false);
+  const [offlineProgress, setOfflineProgress] = useState<{ current: number; total: number } | null>(null);
+
+  // Sync pages when initialPages change
+  useEffect(() => {
+    setPages(initialPages);
+  }, [initialPages]);
+
+  // Check if current chapter is cached offline, or restore if offline
+  useEffect(() => {
+    if (!job?.job_id) return;
+    isChapterCachedOffline(job.job_id).then((cached) => {
+      setIsOfflineCached(cached);
+      if (cached && (!pages.length || !navigator.onLine)) {
+        getOfflineChapterPages(job.job_id).then((cachedPages) => {
+          if (cachedPages && cachedPages.length > 0) {
+            setPages(cachedPages);
+          }
+        });
+      }
+    });
+  }, [job?.job_id]);
 
   const currentPage = pages[currentPageIdx] || pages[0];
 
@@ -52,7 +93,6 @@ export const MangaReader: React.FC<MangaReaderProps> = ({
     }
   };
 
-  // Save to Library / Device Archive (appears in tab 2 "Truyện")
   const handleSaveArchive = () => {
     setIsSaveModalOpen(true);
   };
@@ -62,6 +102,25 @@ export const MangaReader: React.FC<MangaReaderProps> = ({
     setTimeout(() => setSavedSuccess(false), 2000);
   };
 
+  const handleDownloadOffline = async () => {
+    if (!pages.length || isDownloadingOffline) return;
+    setIsDownloadingOffline(true);
+    setOfflineProgress({ current: 0, total: pages.length });
+
+    const res = await downloadChapterOffline(
+      job.job_id,
+      job.source_url || 'Chương truyện',
+      pages,
+      (current, total) => setOfflineProgress({ current, total })
+    );
+
+    setIsDownloadingOffline(false);
+    setOfflineProgress(null);
+    if (res.success) {
+      setIsOfflineCached(true);
+    }
+  };
+
   const isTranslationFinishedOrCancelled =
     job.status === 'completed' ||
     job.status === 'cancelled' ||
@@ -69,17 +128,21 @@ export const MangaReader: React.FC<MangaReaderProps> = ({
 
   const canSave = pages.length > 0 && isTranslationFinishedOrCancelled;
   const canReset = isTranslationFinishedOrCancelled;
+  const canDownloadOffline = pages.length > 0;
+
+  const filterStyle = getFilterStyle(readerSettings);
 
   return (
     <div className="w-full max-w-2xl mx-auto flex flex-col space-y-3">
       {/* Controls Area */}
       <div className="flex flex-col gap-2 w-full">
-        {/* Row 1: Lưu trữ button & Dịch chương mới button */}
+        {/* Row 1: Action buttons */}
         <div className="flex items-center gap-2 w-full">
+          {/* Nút Lưu trữ */}
           <button
             onClick={handleSaveArchive}
             disabled={!canSave}
-            className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-md ${
+            className={`flex-1 py-2.5 px-3 sm:px-4 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-md ${
               !canSave
                 ? 'opacity-40 cursor-not-allowed bg-zinc-900 text-zinc-600 border border-zinc-800/60 pointer-events-none'
                 : savedSuccess
@@ -92,11 +155,45 @@ export const MangaReader: React.FC<MangaReaderProps> = ({
             <span>{savedSuccess ? 'Đã lưu!' : 'Lưu trữ'}</span>
           </button>
 
+          {/* Nút Chế độ ngoại tuyến (Offline Mode) */}
+          <button
+            onClick={handleDownloadOffline}
+            disabled={!canDownloadOffline || isDownloadingOffline}
+            className={`flex-1 py-2.5 px-3 sm:px-4 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-md ${
+              !canDownloadOffline
+                ? 'opacity-40 cursor-not-allowed bg-zinc-900 text-zinc-600 border border-zinc-800/60 pointer-events-none'
+                : isOfflineCached
+                ? 'bg-emerald-950/60 border border-emerald-500/50 text-emerald-300'
+                : 'bg-[#141417] hover:bg-zinc-800 text-zinc-100 border border-zinc-700/80 hover:border-orange-500/50'
+            }`}
+            title="Tải vào bộ nhớ đệm để đọc ngoại tuyến khi không có mạng Internet"
+          >
+            {isDownloadingOffline ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-orange-400 flex-shrink-0" />
+                <span className="truncate">
+                  {offlineProgress ? `${offlineProgress.current}/${offlineProgress.total}` : 'Đang tải...'}
+                </span>
+              </>
+            ) : isOfflineCached ? (
+              <>
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
+                <span>Đã lưu Offline</span>
+              </>
+            ) : (
+              <>
+                <Download className="w-3.5 h-3.5 text-[#e06b3a] flex-shrink-0" />
+                <span>Tải Offline</span>
+              </>
+            )}
+          </button>
+
+          {/* Nút Dịch chương mới */}
           {onReset && (
             <button
               onClick={onReset}
               disabled={!canReset}
-              className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-md ${
+              className={`flex-1 py-2.5 px-3 sm:px-4 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-md ${
                 !canReset
                   ? 'opacity-40 cursor-not-allowed bg-zinc-900 text-zinc-600 border border-zinc-800/60 pointer-events-none'
                   : 'bg-[#141417] hover:bg-zinc-800 text-zinc-100 border border-zinc-700/80 hover:border-orange-500/50'
@@ -104,13 +201,14 @@ export const MangaReader: React.FC<MangaReaderProps> = ({
               title={canReset ? "Dịch chương truyện mới" : "Chờ hoàn tất dịch hoặc hủy tiến trình để dịch chương mới"}
             >
               <RefreshCw className={`w-3.5 h-3.5 ${canReset ? 'text-[#e06b3a]' : 'text-zinc-600'}`} />
-              <span>Dịch chương mới</span>
+              <span>Dịch mới</span>
             </button>
           )}
         </div>
 
-          {/* Row 2: View modes & Settings */}
-          <div className="flex items-center bg-[#141417] border border-zinc-800 rounded-xl p-1 gap-1 w-full">
+        {/* Row 2: View modes (Lật trang / Cuộn) & Tùy chỉnh */}
+        <div className="flex items-center gap-1.5 w-full">
+          <div className="flex-1 flex items-center bg-[#141417] border border-zinc-800 rounded-xl p-1 gap-1">
             <button
               onClick={() => setViewMode('single')}
               className={`flex-1 py-2 px-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1 ${
@@ -133,19 +231,32 @@ export const MangaReader: React.FC<MangaReaderProps> = ({
               <Scroll className="w-3.5 h-3.5 flex-shrink-0" />
               <span>Cuộn</span>
             </button>
-            <button
-              onClick={() => setIsSettingsOpen(prev => !prev)}
-              className={`py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1 ${
-                isSettingsOpen
-                  ? 'bg-zinc-700 text-white'
-                  : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60'
-              }`}
-            >
-              <Lightbulb className="w-4 h-4" />
-            </button>
           </div>
-          
+
+          <button
+            onClick={() => setShowSettings((prev) => !prev)}
+            className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm ${
+              showSettings
+                ? 'bg-[#e06b3a] text-white border-orange-500'
+                : 'bg-[#141417] border-zinc-800 text-zinc-300 hover:text-white hover:bg-zinc-800'
+            }`}
+            title="Mở cài đặt độ sáng, bộ lọc ban đêm, sepia"
+          >
+            <Sliders className="w-3.5 h-3.5 flex-shrink-0" />
+            <span className="hidden sm:inline">Tùy chỉnh</span>
+          </button>
         </div>
+
+        {/* Expandable Advanced Reader Settings Panel */}
+        {showSettings && (
+          <ReaderSettingsPanel
+            settings={readerSettings}
+            onUpdateSettings={(newVals) =>
+              setReaderSettings((prev) => ({ ...prev, ...newVals }))
+            }
+            onClose={() => setShowSettings(false)}
+          />
+        )}
       </div>
 
       {/* Reader Main Container */}
@@ -158,14 +269,11 @@ export const MangaReader: React.FC<MangaReaderProps> = ({
                 <img
                   src={currentPage.processed_image || currentPage.source_image}
                   alt={`Trang ${currentPage.page_number}`}
-                  className="w-full h-auto object-contain select-none transition-all duration-300"
-                  style={{
-                    filter: `brightness(${brightness}%) ${filterType === 'sepia' ? 'sepia(0.6)' : filterType === 'blue-light' ? 'sepia(0.3) saturate(0.8) hue-rotate(-20deg)' : 'none'}`
-                  }}
+                  className="w-full h-auto object-contain select-none"
+                  style={filterStyle}
                   referrerPolicy="no-referrer"
                 />
 
-                {/* Failed page indicator */}
                 {currentPage.status === 'failed' && (
                   <div className="absolute inset-0 bg-[#0e0e11]/90 backdrop-blur-md flex flex-col items-center justify-center p-5 text-center z-30">
                     <div className="w-full max-w-xs bg-[#18181c] border border-rose-500/40 rounded-2xl p-4 space-y-2.5 text-left shadow-2xl">
@@ -204,7 +312,7 @@ export const MangaReader: React.FC<MangaReaderProps> = ({
               </div>
             )}
 
-            {/* Left Tap Zone */}
+            {/* Click navigation overlays */}
             <button
               onClick={handlePrevPage}
               disabled={currentPageIdx === 0}
@@ -213,8 +321,6 @@ export const MangaReader: React.FC<MangaReaderProps> = ({
             >
               <ChevronLeft className="w-8 h-8" />
             </button>
-
-            {/* Right Tap Zone */}
             <button
               onClick={handleNextPage}
               disabled={currentPageIdx >= pages.length - 1}
@@ -225,7 +331,7 @@ export const MangaReader: React.FC<MangaReaderProps> = ({
             </button>
           </div>
         ) : (
-          /* WEBTOON SCROLL VIEW MODE (Only show completed/translated pages) */
+          /* CONTINUOUS SCROLL VIEW MODE */
           <div className="w-full flex flex-col bg-black">
             {pages
               .filter((p) => p.status === 'completed' || p.processed_image)
@@ -235,6 +341,7 @@ export const MangaReader: React.FC<MangaReaderProps> = ({
                     src={p.processed_image || p.source_image}
                     alt={`Trang ${p.page_number}`}
                     className="w-full h-auto object-contain select-none"
+                    style={filterStyle}
                     referrerPolicy="no-referrer"
                   />
                 </div>
@@ -247,7 +354,7 @@ export const MangaReader: React.FC<MangaReaderProps> = ({
           </div>
         )}
 
-        {/* Integrated Bottom Controls Bar (Only in Single View mode) */}
+        {/* Page selector bar in single mode */}
         {viewMode === 'single' && (
           <div className="w-full bg-[#141417] border-t border-zinc-800/80 p-3 flex items-center justify-between gap-3 text-zinc-300">
             <button
@@ -258,8 +365,6 @@ export const MangaReader: React.FC<MangaReaderProps> = ({
               <ChevronLeft className="w-4 h-4" />
               <span>Trước</span>
             </button>
-
-            {/* Page selector dropdown */}
             <div className="flex items-center">
               <select
                 value={currentPageIdx}
@@ -273,7 +378,6 @@ export const MangaReader: React.FC<MangaReaderProps> = ({
                 ))}
               </select>
             </div>
-
             <button
               onClick={handleNextPage}
               disabled={currentPageIdx >= pages.length - 1}
@@ -297,4 +401,3 @@ export const MangaReader: React.FC<MangaReaderProps> = ({
     </div>
   );
 };
-
