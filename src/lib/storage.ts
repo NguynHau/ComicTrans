@@ -1,9 +1,21 @@
-import { RecentItem, MangaFolder } from '../types';
+import { RecentItem, MangaFolder, OCRBoxItem, TranslationItem } from '../types';
 
 const DB_NAME = 'ComicTranslatorDB';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const RECENTS_STORE = 'recents';
 const FOLDERS_STORE = 'folders';
+const PAGE_CACHE_STORE = 'page_cache';
+
+export interface PageCacheData {
+  cacheKey: string;
+  sourceLang: string;
+  targetLang: string;
+  ocr_results: OCRBoxItem[];
+  translations: TranslationItem[];
+  processed_image?: string;
+  source_image?: string;
+  timestamp: number;
+}
 
 function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -20,10 +32,74 @@ function openDB(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains(FOLDERS_STORE)) {
         db.createObjectStore(FOLDERS_STORE, { keyPath: 'id' });
       }
+      if (!db.objectStoreNames.contains(PAGE_CACHE_STORE)) {
+        db.createObjectStore(PAGE_CACHE_STORE, { keyPath: 'cacheKey' });
+      }
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
   });
+}
+
+// Generate unique deterministic cache key for an image + language pair
+export async function generatePageCacheKey(
+  sourceImage: string,
+  sourceLang: string,
+  targetLang: string
+): Promise<string> {
+  let imageSig = '';
+  if (sourceImage.startsWith('data:image/')) {
+    // For base64, create signature from length + head sample + tail sample to be fast and unique
+    const len = sourceImage.length;
+    const head = sourceImage.slice(0, 120);
+    const mid = sourceImage.slice(Math.floor(len / 2) - 60, Math.floor(len / 2) + 60);
+    const tail = sourceImage.slice(-120);
+    imageSig = `b64_${len}_${head}_${mid}_${tail}`;
+  } else {
+    // For URL, clean URL
+    imageSig = `url_${sourceImage.trim().toLowerCase()}`;
+  }
+
+  // Simple string hash
+  let hash = 0;
+  const str = `${imageSig}__${sourceLang}__${targetLang}`;
+  for (let i = 0; i < str.length; i++) {
+    hash = (hash << 5) - hash + str.charCodeAt(i);
+    hash |= 0;
+  }
+  return `trans_cache_${Math.abs(hash)}_${sourceLang}_${targetLang}`;
+}
+
+export async function getCachedPageTranslation(cacheKey: string): Promise<PageCacheData | null> {
+  try {
+    const db = await openDB();
+    if (!db.objectStoreNames.contains(PAGE_CACHE_STORE)) return null;
+    const tx = db.transaction(PAGE_CACHE_STORE, 'readonly');
+    const store = tx.objectStore(PAGE_CACHE_STORE);
+    return new Promise((resolve) => {
+      const req = store.get(cacheKey);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => resolve(null);
+    });
+  } catch {
+    return null;
+  }
+}
+
+export async function saveCachedPageTranslation(data: PageCacheData): Promise<void> {
+  try {
+    const db = await openDB();
+    if (!db.objectStoreNames.contains(PAGE_CACHE_STORE)) return;
+    const tx = db.transaction(PAGE_CACHE_STORE, 'readwrite');
+    const store = tx.objectStore(PAGE_CACHE_STORE);
+    await new Promise<void>((resolve, reject) => {
+      const req = store.put(data);
+      req.onsuccess = () => resolve();
+      req.onerror = () => reject(req.error);
+    });
+  } catch (err) {
+    console.warn('Could not save page translation cache:', err);
+  }
 }
 
 export async function saveRecentItemToStorage(item: RecentItem): Promise<void> {

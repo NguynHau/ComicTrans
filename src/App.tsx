@@ -10,7 +10,7 @@ import { FolderChaptersModal } from './components/FolderChaptersModal';
 import { ApiDocsModal } from './components/ApiDocsModal';
 import { SettingsModal } from './components/SettingsModal';
 import { UpdateModal } from './components/UpdateModal';
-import { MangaJob, MangaPage, RecentItem, MangaFolder, DetailedError } from './types';
+import { MangaJob, MangaPage, RecentItem, MangaFolder, DetailedError, OCRBoxItem, TranslationItem } from './types';
 import { 
   RefreshCw, BookOpen, Key, Sparkles, ShieldCheck, 
   CheckCircle2, AlertCircle, ArrowUpCircle, ExternalLink,
@@ -20,6 +20,7 @@ import {
   extractComicImagesClient,
   runOcrAndTranslationClient,
   renderInpaintedTranslatedImageClient,
+  ensureImageAsJpegBase64,
 } from './lib/clientPipeline';
 import { classifyPipelineError, testGeminiApiKey } from './lib/errorUtils';
 import { checkForAppUpdate, applyAppUpdate, CURRENT_VERSION, CheckUpdateResult } from './lib/updateChecker';
@@ -29,6 +30,9 @@ import {
   saveFoldersToStorage,
   saveRecentItemToStorage,
   deleteRecentItemFromStorage,
+  generatePageCacheKey,
+  getCachedPageTranslation,
+  saveCachedPageTranslation,
 } from './lib/storage';
 
 export function App() {
@@ -261,87 +265,15 @@ export function App() {
         total_pages: resolvedImages.length,
       });
 
-      // 4. Process each page sequentially
+      // 4. Process pages concurrently with optimal worker pool (Concurrency: 3) & IndexedDB Cache
+      const CONCURRENCY_LIMIT = 3;
       let completedCount = 0;
       let lastFailureError: DetailedError | null = null;
       let currentPagesArray = [...initialPages];
+      let isAborted = false;
 
-      for (let i = 0; i < initialPages.length; i++) {
-        // Double check cancellation
-        if ((activeJobRef.current?.status as string) === 'cancelled' || activeJobRef.current?.job_id !== job_id) {
-          return;
-        }
-
-        const page = initialPages[i];
-        
-        // Update job's current page count
-        setActiveJob(prev => prev && prev.job_id === job_id ? {
-          ...prev,
-          current_page: i + 1,
-        } : prev);
-
-        // Update page status to processing
-        currentPagesArray = currentPagesArray.map(p => p.id === page.id ? { ...p, status: 'processing' } : p);
-        setPages(currentPagesArray);
-
-        try {
-          // Perform OCR and translation
-          const { ocr_results, translations, jpegBase64 } = await runOcrAndTranslationClient(
-            page.source_image,
-            sourceLang,
-            targetLang,
-            apiKey
-          );
-
-          // Render inpainted + translated image using the Base64 Data URL
-          const processed_image = await renderInpaintedTranslatedImageClient(
-            jpegBase64 || page.source_image,
-            ocr_results,
-            translations
-          );
-
-          // Update page to completed
-          currentPagesArray = currentPagesArray.map(p => p.id === page.id ? {
-            ...p,
-            status: 'completed',
-            ocr_results,
-            translations,
-            processed_image,
-            source_image: jpegBase64 || p.source_image, // Cache loaded image data URL
-          } : p);
-          setPages(currentPagesArray);
-
-          completedCount++;
-          
-          // Update job progress
-          setActiveJob(prev => prev && prev.job_id === job_id ? {
-            ...prev,
-            completed_pages: completedCount,
-          } : prev);
-
-        } catch (err: any) {
-          console.error(`Page ${i + 1} failed:`, err);
-          const classified = classifyPipelineError(err);
-          lastFailureError = classified;
-
-          // Update page to failed with classified details
-          currentPagesArray = currentPagesArray.map(p => p.id === page.id ? {
-            ...p,
-            status: 'failed',
-            error_message: classified.message,
-            detailed_error: classified,
-          } : p);
-          setPages(currentPagesArray);
-
-          // If API Key is invalid or missing, stop the loop immediately instead of hammering repeatedly
-          if (classified.category === 'API_KEY_INVALID' || classified.category === 'API_KEY_MISSING') {
-            break;
-          }
-        }
-      }
-
-      // 5. Finalize Job Status & Save to Recents
-      if (completedCount > 0) {
+      // Helper function to persist progress incrementally to prevent data loss
+      const persistCurrentProgress = (completed: number, pagesSnapshot: MangaPage[]) => {
         try {
           const recentItem: RecentItem = {
             id: job_id,
@@ -349,25 +281,183 @@ export function App() {
               ? (url.split('/').filter(Boolean).pop()?.replace(/[-_]/g, ' ') || 'Chương truyện')
               : 'Tệp tải lên cá nhân',
             sourceUrl: url,
-            thumbnail: currentPagesArray[0]?.processed_image || resolvedImages[0],
+            thumbnail: pagesSnapshot[0]?.processed_image || resolvedImages[0],
             totalPages: resolvedImages.length,
-            completedPages: completedCount,
+            completedPages: completed,
             timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
             job: {
               ...initialJob,
-              status: 'completed',
-              completed_pages: completedCount,
+              status: completed === resolvedImages.length ? 'completed' : 'processing',
+              completed_pages: completed,
               total_pages: resolvedImages.length,
             },
-            pages: currentPagesArray,
+            pages: pagesSnapshot,
           };
-          const stored = localStorage.getItem('COMIC_TRANS_RECENTS');
-          const list: RecentItem[] = stored ? JSON.parse(stored) : [];
-          const updatedList = [recentItem, ...list.filter(x => x.id !== job_id)].slice(0, 10);
-          localStorage.setItem('COMIC_TRANS_RECENTS', JSON.stringify(updatedList));
-        } catch (e) {
-          console.warn('Could not save recent item:', e);
+          saveRecentItemToStorage(recentItem).catch(() => {});
+        } catch {
+          // ignore
         }
+      };
+
+      const queue = initialPages.map((page, index) => ({ page, index }));
+      let nextQueueIndex = 0;
+
+      const worker = async () => {
+        while (nextQueueIndex < queue.length && !isAborted) {
+          // Double check cancellation
+          if ((activeJobRef.current?.status as string) === 'cancelled' || activeJobRef.current?.job_id !== job_id) {
+            isAborted = true;
+            return;
+          }
+
+          const currentTaskIndex = nextQueueIndex++;
+          const { page, index } = queue[currentTaskIndex];
+
+          // Update job's current page indicator
+          setActiveJob(prev => prev && prev.job_id === job_id ? {
+            ...prev,
+            current_page: Math.max(prev.current_page || 1, index + 1),
+          } : prev);
+
+          // Update page status to processing
+          currentPagesArray = currentPagesArray.map(p => p.id === page.id ? { ...p, status: 'processing' } : p);
+          setPages([...currentPagesArray]);
+
+          const tStart = performance.now();
+          let cacheHit = false;
+          let tFetch = 0;
+          let tGemini = 0;
+          let tRender = 0;
+
+          try {
+            // Step A: Check IndexedDB Cache first
+            const cacheKey = await generatePageCacheKey(page.source_image, sourceLang, targetLang);
+            const cached = await getCachedPageTranslation(cacheKey);
+
+            let ocr_results: OCRBoxItem[];
+            let translations: TranslationItem[];
+            let jpegBase64: string;
+            let processed_image: string;
+
+            if (cached && cached.ocr_results?.length > 0 && cached.translations?.length > 0) {
+              cacheHit = true;
+              ocr_results = cached.ocr_results;
+              translations = cached.translations;
+              jpegBase64 = cached.source_image || page.source_image;
+              processed_image = cached.processed_image || await renderInpaintedTranslatedImageClient(
+                jpegBase64,
+                ocr_results,
+                translations
+              );
+            } else {
+              // Cache miss: Execute OCR -> Translation -> Inpainting pipeline with live timing
+              const t0 = performance.now();
+              const rawJpeg = await ensureImageAsJpegBase64(page.source_image);
+              tFetch = Math.round(performance.now() - t0);
+
+              const t1 = performance.now();
+              const apiRes = await runOcrAndTranslationClient(
+                rawJpeg,
+                sourceLang,
+                targetLang,
+                apiKey,
+                index + 1
+              );
+              tGemini = Math.round(performance.now() - t1);
+
+              ocr_results = apiRes.ocr_results;
+              translations = apiRes.translations;
+              jpegBase64 = apiRes.jpegBase64;
+
+              const t2 = performance.now();
+              processed_image = await renderInpaintedTranslatedImageClient(
+                jpegBase64 || page.source_image,
+                ocr_results,
+                translations
+              );
+              tRender = Math.round(performance.now() - t2);
+
+              // Cache page in IndexedDB for instant future loads
+              await saveCachedPageTranslation({
+                cacheKey,
+                sourceLang,
+                targetLang,
+                ocr_results,
+                translations,
+                processed_image,
+                source_image: jpegBase64,
+                timestamp: Date.now(),
+              });
+            }
+
+            const totalTime = Math.round(performance.now() - tStart);
+            console.log(
+              `⏱️ [RiXia Pipeline] Trang ${index + 1}/${initialPages.length}: ${totalTime}ms (Tải ảnh: ${tFetch}ms, OCR & Dịch AI: ${tGemini}ms, Render: ${tRender}ms) [Cache: ${cacheHit ? 'HIT' : 'MISS'}]`
+            );
+
+            // Double check cancellation before updating React state
+            if ((activeJobRef.current?.status as string) === 'cancelled' || activeJobRef.current?.job_id !== job_id) {
+              isAborted = true;
+              return;
+            }
+
+            // Update page to completed
+            currentPagesArray = currentPagesArray.map(p => p.id === page.id ? {
+              ...p,
+              status: 'completed',
+              ocr_results,
+              translations,
+              processed_image,
+              source_image: jpegBase64 || p.source_image,
+              detailed_error: undefined,
+              error_message: undefined,
+            } : p);
+            setPages([...currentPagesArray]);
+
+            completedCount++;
+
+            // Update job progress
+            setActiveJob(prev => prev && prev.job_id === job_id ? {
+              ...prev,
+              completed_pages: completedCount,
+            } : prev);
+
+            // Incremental backup to storage
+            if (completedCount % 2 === 0 || completedCount === initialPages.length) {
+              persistCurrentProgress(completedCount, currentPagesArray);
+            }
+
+          } catch (err: any) {
+            console.error(`Page ${index + 1} failed:`, err);
+            const classified = classifyPipelineError(err);
+            lastFailureError = classified;
+
+            // Update page to failed without overwriting any completed page
+            currentPagesArray = currentPagesArray.map(p => p.id === page.id ? {
+              ...p,
+              status: 'failed',
+              error_message: classified.message,
+              detailed_error: classified,
+            } : p);
+            setPages([...currentPagesArray]);
+
+            // If API Key is invalid or missing, stop all workers immediately
+            if (classified.category === 'API_KEY_INVALID' || classified.category === 'API_KEY_MISSING') {
+              isAborted = true;
+              break;
+            }
+          }
+        }
+      };
+
+      // Spawn concurrent worker pool
+      const workerCount = Math.min(CONCURRENCY_LIMIT, initialPages.length);
+      const workers = Array.from({ length: workerCount }, () => worker());
+      await Promise.all(workers);
+
+      // 5. Finalize Job Status & Save to Recents
+      if (completedCount > 0) {
+        persistCurrentProgress(completedCount, currentPagesArray);
       }
 
       setActiveJob(prev => {
@@ -378,6 +468,7 @@ export function App() {
         return {
           ...prev,
           status: hasCompleted ? 'completed' : 'failed',
+          completed_pages: completedCount,
           error_message: hasCompleted ? undefined : (lastFailureError?.message || 'Tất cả các trang đều dịch thất bại.'),
           detailed_error: hasCompleted ? undefined : (lastFailureError || undefined),
         };
@@ -423,18 +514,36 @@ export function App() {
         throw new Error("API_KEY_MISSING: Chưa tìm thấy Gemini API Key.");
       }
 
-      const { ocr_results, translations } = await runOcrAndTranslationClient(
-        page.source_image,
+      const tStart = performance.now();
+      const rawJpeg = await ensureImageAsJpegBase64(page.source_image);
+      const { ocr_results, translations, jpegBase64 } = await runOcrAndTranslationClient(
+        rawJpeg,
         activeJob.source_language,
         activeJob.target_language,
-        apiKey
+        apiKey,
+        page.page_number
       );
 
       const processed_image = await renderInpaintedTranslatedImageClient(
-        page.source_image,
+        jpegBase64 || rawJpeg,
         ocr_results,
         translations
       );
+
+      // Save to cache
+      const cacheKey = await generatePageCacheKey(page.source_image, activeJob.source_language, activeJob.target_language);
+      await saveCachedPageTranslation({
+        cacheKey,
+        sourceLang: activeJob.source_language,
+        targetLang: activeJob.target_language,
+        ocr_results,
+        translations,
+        processed_image,
+        source_image: jpegBase64 || rawJpeg,
+        timestamp: Date.now(),
+      });
+
+      console.log(`⏱️ [RiXia Retry] Trang ${page.page_number} dịch lại thành công trong ${Math.round(performance.now() - tStart)}ms`);
 
       setPages((prev) =>
         prev.map((p) =>
@@ -445,7 +554,9 @@ export function App() {
                 ocr_results,
                 translations,
                 processed_image,
+                source_image: jpegBase64 || rawJpeg,
                 detailed_error: undefined,
+                error_message: undefined,
               }
             : p
         )

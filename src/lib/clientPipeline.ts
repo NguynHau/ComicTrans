@@ -292,11 +292,155 @@ const CANDIDATE_GEMINI_MODELS = [
 ];
 
 // Direct client-side Gemini Vision OCR & Translation API connector
+
+export interface PipelineMetrics {
+  pageNumber?: number;
+  fetchTimeMs: number;
+  geminiTimeMs: number;
+  renderTimeMs: number;
+  totalTimeMs: number;
+  cacheHit: boolean;
+  modelUsed?: string;
+}
+
+// Create optimized payload for Gemini Vision to reduce bandwidth and speed up API processing
+// Preserves normalized 0..1000 coordinate mapping while drastically reducing base64 payload size
+export async function createOptimizedVisionPayload(
+  jpegBase64: string,
+  maxDimension = 1536
+): Promise<{ base64Data: string; width: number; height: number; originalWidth: number; originalHeight: number }> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const origW = img.naturalWidth || img.width || 800;
+      const origH = img.naturalHeight || img.height || 1100;
+
+      // If dimensions are already optimal, use as is
+      if (origW <= maxDimension && origH <= maxDimension) {
+        const base64Data = jpegBase64.replace(/^data:image\/jpeg;base64,/, '');
+        return resolve({
+          base64Data,
+          width: origW,
+          height: origH,
+          originalWidth: origW,
+          originalHeight: origH,
+        });
+      }
+
+      // Calculate proportional scale
+      const scale = Math.min(maxDimension / origW, maxDimension / origH);
+      const targetW = Math.max(320, Math.round(origW * scale));
+      const targetH = Math.max(320, Math.round(origH * scale));
+
+      const canvas = document.createElement('canvas');
+      canvas.width = targetW;
+      canvas.height = targetH;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        const base64Data = jpegBase64.replace(/^data:image\/jpeg;base64,/, '');
+        return resolve({
+          base64Data,
+          width: origW,
+          height: origH,
+          originalWidth: origW,
+          originalHeight: origH,
+        });
+      }
+
+      ctx.drawImage(img, 0, 0, targetW, targetH);
+      const scaledDataUrl = canvas.toDataURL('image/jpeg', 0.85);
+      const base64Data = scaledDataUrl.replace(/^data:image\/jpeg;base64,/, '');
+
+      resolve({
+        base64Data,
+        width: targetW,
+        height: targetH,
+        originalWidth: origW,
+        originalHeight: origH,
+      });
+    };
+
+    img.onerror = () => {
+      const base64Data = jpegBase64.replace(/^data:image\/jpeg;base64,/, '');
+      resolve({
+        base64Data,
+        width: 800,
+        height: 1100,
+        originalWidth: 800,
+        originalHeight: 1100,
+      });
+    };
+
+    img.src = jpegBase64;
+  });
+}
+
+// Batch translate text fragments in a single Gemini request preserving item IDs
+export async function batchTranslateTextsClient(
+  items: { id: string; text: string }[],
+  sourceLang: string,
+  targetLang: string,
+  apiKey: string
+): Promise<{ id: string; translated_text: string }[]> {
+  if (items.length === 0) return [];
+  const cleanApiKey = apiKey.trim();
+  if (!cleanApiKey) {
+    throw new Error('API_KEY_MISSING: Chưa tìm thấy Gemini API Key.');
+  }
+
+  const targetLangStr = targetLang === 'vi' ? 'Vietnamese (tiếng Việt)' : 'English';
+  const prompt = `You are a professional comic/manga translator.
+Translate the following dialogue snippets into natural comic-style ${targetLangStr}.
+Preserve each item's "id" exactly. Return a valid JSON array of objects with "id" and "translated_text".
+Items to translate:
+${JSON.stringify(items, null, 2)}`;
+
+  const requestBody = JSON.stringify({
+    contents: [{ parts: [{ text: prompt }] }],
+    generationConfig: {
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: 'ARRAY',
+        items: {
+          type: 'OBJECT',
+          properties: {
+            id: { type: 'STRING' },
+            translated_text: { type: 'STRING' }
+          },
+          required: ['id', 'translated_text']
+        }
+      }
+    }
+  });
+
+  for (const model of CANDIDATE_GEMINI_MODELS) {
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${cleanApiKey}`;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: requestBody,
+      });
+      if (!res.ok) continue;
+      const json = await res.json();
+      const text = json?.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
+      const parsed = JSON.parse(text);
+      if (Array.isArray(parsed)) return parsed;
+    } catch {
+      // try next model
+    }
+  }
+
+  return items.map((it) => ({ id: it.id, translated_text: it.text }));
+}
+
+// Direct client-side Gemini Vision OCR & Translation API connector
 export async function runOcrAndTranslationClient(
   base64Image: string,
   sourceLang: string,
   targetLang: string,
-  apiKey: string
+  apiKey: string,
+  pageIdentifier?: string | number
 ): Promise<{ ocr_results: OCRBoxItem[]; translations: TranslationItem[]; model_used?: string; jpegBase64: string }> {
   const cleanApiKey = apiKey.trim();
   if (!cleanApiKey) {
@@ -305,25 +449,15 @@ export async function runOcrAndTranslationClient(
 
   // Always convert input image to JPEG Base64 for maximum Gemini API compatibility
   const jpegBase64 = await ensureImageAsJpegBase64(base64Image);
-  const base64DataOnly = jpegBase64.replace(/^data:image\/jpeg;base64,/, '');
+
+  // Optimize payload size for faster network transfer
+  const optimized = await createOptimizedVisionPayload(jpegBase64, 1536);
+  const base64DataOnly = optimized.base64Data;
+  const W = optimized.originalWidth;
+  const H = optimized.originalHeight;
 
   // Establish target languages name string
   const targetLangStr = targetLang === 'vi' ? 'Vietnamese (tiếng Việt)' : 'English';
-
-  // We load the image to determine actual dimensions
-  const dimensions = await new Promise<{ width: number; height: number }>((resolve) => {
-    const img = new Image();
-    img.onload = () => {
-      resolve({ width: img.naturalWidth || 800, height: img.naturalHeight || 1100 });
-    };
-    img.onerror = () => {
-      resolve({ width: 800, height: 1100 });
-    };
-    img.src = jpegBase64;
-  });
-
-  const W = dimensions.width;
-  const H = dimensions.height;
 
   const prompt = `You are an elite Comic/Manga/Manhwa/Manhua OCR, Vision, and Translation Engine.
 This image has dimensions ${W}x${H} pixels (aspect ratio ${(H / W).toFixed(1)}:1).
@@ -447,6 +581,7 @@ Return a valid JSON array of all detected speech bubbles.`;
 
       const ocr_results: OCRBoxItem[] = [];
       const translations: TranslationItem[] = [];
+      const pagePrefix = pageIdentifier ? `p${pageIdentifier}` : `p${Date.now()}`;
 
       items.forEach((item, idx) => {
         const rawYmin = typeof item.ymin === 'number' ? item.ymin : 0;
@@ -470,8 +605,11 @@ Return a valid JSON array of all detected speech bubbles.`;
         if (ymax - ymin < 12) ymax = Math.min(1000, ymin + 20);
         if (xmax - xmin < 12) xmax = Math.min(1000, xmin + 20);
 
+        const bubbleId = `bubble_${pagePrefix}_${idx}`;
+        const transId = `trans_${pagePrefix}_${idx}`;
+
         ocr_results.push({
-          id: `bubble_${Date.now()}_${idx}`,
+          id: bubbleId,
           text: item.text || '',
           confidence: 1.0,
           language: sourceLang,
@@ -492,7 +630,7 @@ Return a valid JSON array of all detected speech bubbles.`;
         });
 
         translations.push({
-          id: `trans_${Date.now()}_${idx}`,
+          id: transId,
           source_text: item.text || '',
           translated_text: item.translation || '',
           source_language: sourceLang,
