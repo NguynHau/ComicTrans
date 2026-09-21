@@ -1032,14 +1032,6 @@ export function App() {
               </p>
             </div>
 
-            {/* Current Version badge */}
-            <div className="flex items-center justify-between bg-[#141417] p-3.5 rounded-xl border border-zinc-800 text-xs shadow-sm">
-              <span className="text-zinc-400 font-medium">Phiên bản hiện tại:</span>
-              <span className="font-mono font-bold text-emerald-400 bg-emerald-500/10 px-2.5 py-0.5 rounded-full border border-emerald-500/20">
-                v{CURRENT_VERSION.version}
-              </span>
-            </div>
-
             {/* Status Body */}
             {checkingUpdate && (
               <div className="p-8 text-center space-y-3 bg-[#141417] rounded-xl border border-zinc-800 shadow-sm">

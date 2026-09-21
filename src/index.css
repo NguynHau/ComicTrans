@@ -1,10 +1,10 @@
 @import "tailwindcss";
-@import url('https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400..700;1,400..700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,200..800;1,200..800&family=Lora:ital,wght@0,400..700;1,400..700&display=swap');
 
 @layer base {
   body {
-    font-family: 'Lora', Georgia, serif;
-    background-color: #0c0c0e;
+    font-family: 'Lora', Georgia, serif !important;
+    background-color: #050505;
     color: #e4e4e7;
     -webkit-tap-highlight-color: transparent;
     user-select: none;
@@ -18,10 +18,10 @@
 
 /* Subtle vertical wood/panel slats texture as seen in the mockup background */
 .bg-comic-panel {
-  background-color: #0e0e11;
+  background-color: #0a0a0a;
   background-image: 
     linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
-    linear-gradient(180deg, #131317 0%, #0c0c0e 100%);
+    linear-gradient(180deg, #0f0f0f 0%, #050505 100%);
   background-size: 80px 100%, 100% 100%;
 }
 
