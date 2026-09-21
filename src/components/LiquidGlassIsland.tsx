@@ -62,21 +62,26 @@ export const LiquidGlassIsland: React.FC<LiquidGlassIslandProps> = ({
 
   // Helper to calculate dynamic bounds based on current container width
   const getBounds = () => {
-    if (!containerRef.current) return { min: 0, max: 284, itemWidth: 71 };
-    const containerWidth = containerRef.current.offsetWidth || 294;
-    // Account for px-[5px] padding (5px on each side = 10px total)
-    const innerWidth = containerWidth - 10;
-    const itemWidth = innerWidth / TABS.length;
-    const min = (5 + itemWidth / 2) - 35.5;
-    const max = (5 + (TABS.length - 1) * itemWidth + itemWidth / 2) - 35.5;
-    return { min, max, itemWidth };
+    if (!containerRef.current) return { min: 5, max: 274, step: 89.6, itemWidth: 71 };
+    const containerWidth = containerRef.current.offsetWidth || 350;
+    
+    // The drop is 71px wide. To keep 5px margin at edges:
+    // Leftmost x = 5
+    // Rightmost x = containerWidth - 5 - 71
+    const min = 5;
+    const max = containerWidth - 76;
+    
+    // Distance to travel between 4 tabs (3 gaps)
+    const step = (max - min) / (TABS.length - 1);
+    
+    return { min, max, step };
   };
 
   // Calculate and update position based on active tab index
   const updatePosition = (idx: number) => {
     if (isDragging.current) return; // Do not interrupt during manual drag
-    const { itemWidth } = getBounds();
-    const targetX = 5 + (idx * itemWidth) + (itemWidth / 2) - 35.5;
+    const { min, step } = getBounds();
+    const targetX = min + (idx * step);
     blobTargetX.set(targetX);
   };
 
@@ -110,8 +115,7 @@ export const LiquidGlassIsland: React.FC<LiquidGlassIslandProps> = ({
     if (!containerRef.current) return;
 
     const rect = containerRef.current.getBoundingClientRect();
-    const paddingLeft = 5; // px-[5px] = 5px
-    const localX = e.clientX - rect.left - paddingLeft;
+    const localX = e.clientX - rect.left;
     const targetX = localX - 35.5; // 35.5 is half of droplet width (71)
 
     const { min, max } = getBounds();
@@ -169,16 +173,16 @@ export const LiquidGlassIsland: React.FC<LiquidGlassIslandProps> = ({
     pressTargetScaleX.set(1);
     pressTargetScaleY.set(1);
 
-    const { min, itemWidth } = getBounds();
+    const { min, step } = getBounds();
     const currentX = blobTargetX.get();
     
     // Snaps cleanly to the nearest slot
     const closestIdx = Math.max(
       0,
-      Math.min(TABS.length - 1, Math.round((currentX - min) / itemWidth))
+      Math.min(TABS.length - 1, Math.round((currentX - min) / step))
     );
 
-    const targetX = 5 + closestIdx * itemWidth + itemWidth / 2 - 35.5;
+    const targetX = min + closestIdx * step;
     blobTargetX.set(targetX);
     onChangeTab(TABS[closestIdx].id);
   };
@@ -207,7 +211,7 @@ export const LiquidGlassIsland: React.FC<LiquidGlassIslandProps> = ({
           style={{
             width: '100%',
             minWidth: 280,
-            maxWidth: 294,
+            maxWidth: 350,
             height: 64,
             borderRadius: 9999,
             backgroundColor: 'rgba(255, 255, 255, 0)',
@@ -243,13 +247,17 @@ export const LiquidGlassIsland: React.FC<LiquidGlassIslandProps> = ({
 
           {/* LAYER 1: Inactive Icons Base (#71717a - zinc-500) */}
           <div className="absolute inset-0 flex items-center z-10 px-[5px] pointer-events-none w-full">
-            {TABS.map((tab) => {
+            {TABS.map((tab, idx) => {
               const IconComp = tab.icon;
+              const { min, step } = getBounds();
+              const centerPos = min + (idx * step) + 35.5;
               return (
                 <div
                   key={tab.id}
                   style={{
-                    flex: '1 1 0%',
+                    position: 'absolute',
+                    left: centerPos,
+                    transform: 'translateX(-50%)',
                     height: 64,
                   }}
                   className="flex flex-col items-center justify-center text-[#71717a]"
@@ -268,13 +276,17 @@ export const LiquidGlassIsland: React.FC<LiquidGlassIslandProps> = ({
             }}
             className="absolute inset-0 flex items-center z-20 pointer-events-none px-[5px] w-full"
           >
-            {TABS.map((tab) => {
+            {TABS.map((tab, idx) => {
               const IconComp = tab.icon;
+              const { min, step } = getBounds();
+              const centerPos = min + (idx * step) + 35.5;
               return (
                 <div
                   key={tab.id}
                   style={{
-                    flex: '1 1 0%',
+                    position: 'absolute',
+                    left: centerPos,
+                    transform: 'translateX(-50%)',
                     height: 64,
                   }}
                   className="flex flex-col items-center justify-center"
