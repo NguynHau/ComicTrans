@@ -57,15 +57,15 @@ export const BatchProgressCard: React.FC<BatchProgressCardProps> = ({
       {/* Header with Series Name & Badge */}
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-start gap-2.5 min-w-0">
-          <div className="w-9 h-9 rounded-xl bg-orange-500/10 border border-orange-500/20 flex items-center justify-center text-[#e06b3a] flex-shrink-0 mt-0.5">
+          <div className="w-9 h-9 flex items-center justify-center text-[#e06b3a] flex-shrink-0 mt-0.5">
             {isRunning ? (
-              <Loader2 className="w-4 h-4 animate-spin text-[#e06b3a]" />
+              <Loader2 className="w-5 h-5 animate-spin text-[#e06b3a]" />
             ) : isCompleted ? (
-              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+              <CheckCircle2 className="w-5 h-5 text-emerald-400" />
             ) : isPaused ? (
-              <Pause className="w-4 h-4 text-amber-400" />
+              <Pause className="w-5 h-5 text-amber-400" />
             ) : (
-              <Layers className="w-4 h-4 text-zinc-400" />
+              <Layers className="w-5 h-5 text-zinc-400" />
             )}
           </div>
           <div className="min-w-0">
@@ -74,15 +74,11 @@ export const BatchProgressCard: React.FC<BatchProgressCardProps> = ({
                 <Sparkles className="w-2.5 h-2.5" />
                 <span>Dịch tự động toàn bộ</span>
               </span>
-              <span className="text-[10px] text-zinc-400 font-medium flex items-center gap-1">
-                <Folder className="w-3 h-3 text-[#e06b3a]" />
-                <span className="truncate max-w-[120px]">{session.seriesName}</span>
-              </span>
             </div>
-            <h3 className="text-sm font-bold text-zinc-100 mt-1 truncate">
+            <h2 className="text-xl sm:text-2xl font-black text-zinc-100 mt-2 tracking-tight truncate">
               {session.seriesName}
-            </h3>
-            <p className="text-[11px] text-zinc-400">
+            </h2>
+            <p className="text-[11px] text-zinc-400 mt-1">
               {isRunning && `Đang xử lý: ${currentChapterTitle}`}
               {isPaused && `Đang tạm dừng tại ${currentChapterTitle}`}
               {isCompleted && `Đã hoàn tất toàn bộ truyện (${completedChaptersCount} chương)`}
@@ -97,7 +93,7 @@ export const BatchProgressCard: React.FC<BatchProgressCardProps> = ({
           {isRunning && (
             <button
               onClick={onPause}
-              className="p-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 transition-colors"
+              className="p-2 rounded-full bg-zinc-800 hover:bg-zinc-700 text-zinc-300 transition-all border border-zinc-700/50"
               title="Tạm dừng dịch"
             >
               <Pause className="w-4 h-4" />
@@ -107,29 +103,19 @@ export const BatchProgressCard: React.FC<BatchProgressCardProps> = ({
           {isPaused && (
             <button
               onClick={onResume}
-              className="p-1.5 rounded-lg bg-[#e06b3a] hover:bg-orange-600 text-white transition-colors shadow-md shadow-orange-950/40"
+              className="p-2 rounded-full bg-[#e06b3a] hover:bg-orange-600 text-white transition-all shadow-md shadow-orange-950/40"
               title="Tiếp tục dịch"
             >
               <Play className="w-4 h-4" />
             </button>
           )}
 
-          {(isRunning || isPaused) && (
-            <button
-              onClick={onStop}
-              className="p-1.5 rounded-lg bg-zinc-800 hover:bg-rose-950/40 hover:text-rose-300 text-zinc-400 transition-colors"
-              title="Dừng hẳn"
-            >
-              <Square className="w-4 h-4" />
-            </button>
-          )}
-
           {isFailed && (
             <button
               onClick={onResume}
-              className="flex items-center gap-1 px-2.5 py-1 bg-[#e06b3a] text-white rounded-lg text-xs font-semibold"
+              className="flex items-center gap-1 px-3 py-1.5 bg-[#e06b3a] hover:bg-orange-600 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-orange-950/40"
             >
-              <RotateCcw className="w-3 h-3" />
+              <RotateCcw className="w-3.5 h-3.5" />
               <span>Thử lại</span>
             </button>
           )}
@@ -164,37 +150,40 @@ export const BatchProgressCard: React.FC<BatchProgressCardProps> = ({
         </div>
       </div>
 
-      {/* Summary of Completed Chapters so far */}
+      {/* Summary of Completed Chapters so far (Presented vertically) */}
       {completedChaptersCount > 0 && (
-        <div className="space-y-2 pt-1 border-t border-zinc-800/80">
+        <div className="space-y-2.5 pt-2 border-t border-zinc-800/80">
           <div className="flex items-center justify-between text-xs">
-            <span className="text-zinc-400 font-medium">
+            <span className="text-zinc-400 font-bold">
               Chương đã dịch ({completedChaptersCount}):
             </span>
             {onOpenFolder && (
               <button
                 type="button"
                 onClick={() => onOpenFolder(session.folderId, session.seriesName)}
-                className="text-[11px] text-[#e06b3a] hover:underline font-semibold flex items-center gap-1"
+                className="text-[11px] text-[#e06b3a] hover:underline font-bold flex items-center gap-1"
               >
                 <span>Mở thư mục</span>
-                <ChevronRight className="w-3 h-3" />
+                <ChevronRight className="w-3.5 h-3.5" />
               </button>
             )}
           </div>
 
-          <div className="flex gap-2 overflow-x-auto pb-1 max-w-full">
+          <div className="flex flex-col gap-2 max-h-[300px] overflow-y-auto pr-1">
             {session.completedChapters.map((ch) => (
               <button
                 key={ch.recentItemId || ch.url}
                 type="button"
                 onClick={() => onReadChapter?.(ch.recentItemId)}
-                className="flex-shrink-0 px-3 py-1.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-left text-xs text-zinc-200 transition-all flex items-center gap-2 group"
+                className="w-full px-3.5 py-2.5 rounded-xl bg-zinc-900 hover:bg-[#1a1a22] border border-zinc-800/80 hover:border-zinc-700 text-left text-xs text-zinc-200 transition-all flex items-center justify-between group cursor-pointer shadow-sm"
               >
-                <BookOpen className="w-3.5 h-3.5 text-[#e06b3a] group-hover:scale-110 transition-transform" />
-                <div className="min-w-0">
-                  <span className="font-semibold block truncate max-w-[110px]">{ch.title}</span>
-                  <span className="text-[10px] text-zinc-500 block">{ch.pageCount} trang</span>
+                <div className="flex items-center gap-3 min-w-0">
+                  <BookOpen className="w-4 h-4 text-[#e06b3a] group-hover:scale-110 transition-transform flex-shrink-0" />
+                  <span className="font-bold truncate text-zinc-100">{ch.title}</span>
+                </div>
+                <div className="flex items-center gap-1.5 flex-shrink-0">
+                  <span className="text-[10px] text-zinc-500 bg-zinc-800 px-2 py-0.5 rounded-full border border-zinc-700/40">{ch.pageCount} trang</span>
+                  <ChevronRight className="w-3.5 h-3.5 text-zinc-500 group-hover:translate-x-0.5 transition-transform" />
                 </div>
               </button>
             ))}

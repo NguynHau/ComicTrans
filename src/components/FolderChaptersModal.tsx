@@ -42,7 +42,7 @@ export const FolderChaptersModal: React.FC<FolderChaptersModalProps> = ({
 
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2.5 min-w-0 pr-2">
-              <div className="p-2 rounded-xl bg-orange-500/10 border border-orange-500/20 text-[#e06b3a]">
+              <div className="p-2 rounded-full bg-orange-500/10 border border-orange-500/20 text-[#e06b3a]">
                 <Folder className="w-5 h-5" />
               </div>
               <div className="min-w-0">

@@ -13,9 +13,9 @@
     </filter>
   </defs>
   
-  <!-- Background with rounded squircle -->
-  <rect width="512" height="512" rx="112" fill="#090d16" />
-  <rect x="24" y="24" width="464" height="464" rx="96" fill="url(#bgGrad)" opacity="0.9" />
+  <!-- Background with circle (no square frame) -->
+  <circle cx="256" cy="256" r="256" fill="#090d16" />
+  <circle cx="256" cy="256" r="232" fill="url(#bgGrad)" opacity="0.9" />
   
   <!-- Outer Speech Balloon (Manga Style) -->
   <g filter="url(#shadow)">

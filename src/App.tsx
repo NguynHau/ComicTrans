@@ -847,17 +847,6 @@ export function App() {
                     }
                   }}
                 />
-
-                {/* If current chapter has pages loaded/processing, show reader */}
-                {hasReaderView && activeJob && (
-                  <MangaReader
-                    job={activeJob}
-                    pages={pages}
-                    onRetryPage={handleRetryPage}
-                    onUpdateDialogue={handleUpdateDialogue}
-                    onReset={handleReset}
-                  />
-                )}
               </div>
             )}
 

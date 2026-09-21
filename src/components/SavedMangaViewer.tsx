@@ -135,7 +135,7 @@ export const SavedMangaViewer: React.FC<SavedMangaViewerProps> = ({
           title={prevChapter ? `Đọc ${prevChapter.title}` : 'Không có chap trước'}
         >
           <ChevronLeft className="w-4 h-4 text-[#e06b3a]" />
-          <span>{prevChapter ? `Tập trước (${prevChapter.title})` : 'Chap trước'}</span>
+          <span>Chap trước</span>
         </button>
 
         {/* Nút Chap Sau */}
@@ -149,7 +149,7 @@ export const SavedMangaViewer: React.FC<SavedMangaViewerProps> = ({
           }`}
           title={nextChapter ? `Đọc ${nextChapter.title}` : 'Không có chap sau'}
         >
-          <span>{nextChapter ? `Tập sau (${nextChapter.title})` : 'Chap sau'}</span>
+          <span>Chap sau</span>
           <ChevronRight className="w-4 h-4 text-[#e06b3a]" />
         </button>
       </div>
