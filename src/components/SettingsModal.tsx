@@ -11,9 +11,14 @@ interface SettingsModalProps {
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, onOpenUpdateModal }) => {
-  const [apiKey, setApiKey] = useState('');
+  const [provider, setProvider] = useState<'auto' | 'gemini' | 'openai'>('auto');
+  const [geminiKey, setGeminiKey] = useState('');
+  const [openaiKey, setOpenaiKey] = useState('');
+  const [geminiModel, setGeminiModel] = useState('auto');
+  const [openaiModel, setOpenaiModel] = useState('auto');
   const [showKey, setShowKey] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [availableModels, setAvailableModels] = useState<string[]>([]);
   const [testState, setTestState] = useState<{
     status: 'idle' | 'testing' | 'success' | 'error';
     message?: string;
@@ -22,20 +27,83 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, o
 
   useEffect(() => {
     if (isOpen) {
-      const storedKey = localStorage.getItem('GEMINI_API_KEY') || '';
-      setApiKey(storedKey);
+      const storedProvider = (localStorage.getItem('API_PROVIDER') || 'auto') as 'auto' | 'gemini' | 'openai';
+      const gKey = localStorage.getItem('GEMINI_API_KEY') || '';
+      const oKey = localStorage.getItem('OPENAI_API_KEY') || '';
+      const gModel = localStorage.getItem('GEMINI_SELECTED_MODEL') || 'auto';
+      const oModel = localStorage.getItem('OPENAI_SELECTED_MODEL') || 'auto';
+
+      setProvider(storedProvider);
+      setGeminiKey(gKey);
+      setOpenaiKey(oKey);
+      setGeminiModel(gModel);
+      setOpenaiModel(oModel);
       setSaved(false);
       setShowKey(false);
       setTestState({ status: 'idle' });
     }
   }, [isOpen]);
 
+  // Dynamically load available models for the selected provider & key
+  useEffect(() => {
+    let activeKey = '';
+    let activeProvider: 'gemini' | 'openai' = 'gemini';
+
+    if (provider === 'auto') {
+      const key = geminiKey || openaiKey;
+      if (key.startsWith('sk-')) {
+        activeProvider = 'openai';
+        activeKey = key;
+      } else {
+        activeProvider = 'gemini';
+        activeKey = key;
+      }
+    } else {
+      activeProvider = provider;
+      activeKey = provider === 'openai' ? openaiKey : geminiKey;
+    }
+
+    if (!activeKey) {
+      setAvailableModels([]);
+      return;
+    }
+
+    let isCancelled = false;
+    import('../lib/clientPipeline').then(({ getAvailableModelsForProvider }) => {
+      getAvailableModelsForProvider(activeProvider, activeKey).then((models) => {
+        if (!isCancelled) {
+          setAvailableModels(models);
+        }
+      });
+    });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [provider, geminiKey, openaiKey]);
+
   if (!isOpen) return null;
 
   const hasEnvKey = !!import.meta.env.VITE_GEMINI_API_KEY;
-  const activeKey = apiKey.trim() || import.meta.env.VITE_GEMINI_API_KEY || '';
 
   const handleTestKey = async () => {
+    let activeKey = '';
+    let activeProvider: 'gemini' | 'openai' = 'gemini';
+
+    if (provider === 'auto') {
+      const key = geminiKey || openaiKey;
+      if (key.startsWith('sk-')) {
+        activeProvider = 'openai';
+        activeKey = key;
+      } else {
+        activeProvider = 'gemini';
+        activeKey = key;
+      }
+    } else {
+      activeProvider = provider;
+      activeKey = provider === 'openai' ? openaiKey : geminiKey;
+    }
+
     if (!activeKey) {
       setTestState({
         status: 'error',
@@ -44,7 +112,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, o
       return;
     }
 
-    setTestState({ status: 'testing', message: 'Đang gửi yêu cầu kiểm tra tới Google Gemini...' });
+    setTestState({ status: 'testing', message: `Đang gửi yêu cầu kết nối thử nghiệm đến ${activeProvider === 'openai' ? 'OpenAI' : 'Google Gemini'}...` });
 
     const result = await testGeminiApiKey(activeKey);
     if (result.ok) {
@@ -64,11 +132,24 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, o
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
     resetCachedProviderInfo();
-    if (apiKey.trim()) {
-      localStorage.setItem('GEMINI_API_KEY', apiKey.trim());
+
+    localStorage.setItem('API_PROVIDER', provider);
+
+    if (geminiKey.trim()) {
+      localStorage.setItem('GEMINI_API_KEY', geminiKey.trim());
     } else {
       localStorage.removeItem('GEMINI_API_KEY');
     }
+
+    if (openaiKey.trim()) {
+      localStorage.setItem('OPENAI_API_KEY', openaiKey.trim());
+    } else {
+      localStorage.removeItem('OPENAI_API_KEY');
+    }
+
+    localStorage.setItem('GEMINI_SELECTED_MODEL', geminiModel);
+    localStorage.setItem('OPENAI_SELECTED_MODEL', openaiModel);
+
     setSaved(true);
     setTimeout(() => {
       setSaved(false);
@@ -83,7 +164,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, o
         <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
           <div className="flex items-center gap-2">
             <Key className="w-5 h-5 text-[#e06b3a]" />
-            <h3 className="font-bold text-zinc-100">Cấu hình Google Gemini API Key</h3>
+            <h3 className="font-bold text-zinc-100">Cấu hình API kết nối AI</h3>
           </div>
           <button
             onClick={onClose}
@@ -100,53 +181,155 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, o
             <span>Môi trường Trực tiếp Trình duyệt (Client-Side)</span>
           </p>
           <p>
-            Mã khóa API được lưu cục bộ an toàn trong máy của bạn (localStorage) và gửi trực tiếp tới máy chủ Google AI Studio khi dịch.
+            Mã khóa API được lưu cục bộ an toàn trong máy của bạn (localStorage) và gửi trực tiếp tới máy chủ AI tương ứng khi thực hiện dịch.
           </p>
-          <div className="pt-1 flex items-center justify-between">
-            <a
-              href="https://aistudio.google.com/app/apikey"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#e06b3a] hover:underline"
-            >
-              <span>Lấy API Key miễn phí tại Google AI Studio</span>
-              <ExternalLink className="w-3 h-3" />
-            </a>
-          </div>
         </div>
 
         {/* Form */}
         <form onSubmit={handleSave} className="space-y-4">
+          {/* Provider Selection */}
           <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <label className="block text-xs font-semibold text-zinc-300 uppercase tracking-wider">
-                Gemini API Key
-              </label>
-              {hasEnvKey && !apiKey.trim() && (
-                <span className="text-[10px] text-emerald-400 font-medium">Đang dùng key mặc định</span>
+            <label className="block text-xs font-semibold text-zinc-300 uppercase tracking-wider">
+              Nhà cung cấp API
+            </label>
+            <select
+              value={provider}
+              onChange={(e) => {
+                setProvider(e.target.value as any);
+                setTestState({ status: 'idle' });
+              }}
+              className="w-full px-3 py-2 bg-[#18181c] border border-zinc-700/80 rounded-xl text-zinc-100 text-sm focus:outline-none focus:border-[#e06b3a] transition-all cursor-pointer"
+            >
+              <option value="auto">Tự nhận diện (Auto-detect)</option>
+              <option value="gemini">Google Gemini</option>
+              <option value="openai">OpenAI</option>
+            </select>
+          </div>
+
+          {/* Gemini API Key & Model Configuration */}
+          {(provider === 'auto' || provider === 'gemini') && (
+            <div className="space-y-4">
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-semibold text-zinc-300 uppercase tracking-wider">
+                    Google Gemini API Key
+                  </label>
+                  {hasEnvKey && !geminiKey.trim() && (
+                    <span className="text-[10px] text-emerald-400 font-medium">Đang dùng key mặc định</span>
+                  )}
+                </div>
+                <div className="relative">
+                  <input
+                    type={showKey ? "text" : "password"}
+                    value={geminiKey}
+                    onChange={(e) => {
+                      setGeminiKey(e.target.value);
+                      setTestState({ status: 'idle' });
+                    }}
+                    placeholder={hasEnvKey ? "•••••••••••••••••••••••• (Đã có key build sẵn)" : "Dán mã AI Studio API Key (AIzaSy...)"}
+                    className="w-full px-3.5 py-2.5 pr-10 bg-[#18181c] border border-zinc-700/80 rounded-xl text-zinc-100 placeholder-zinc-500 text-sm focus:outline-none focus:border-[#e06b3a] transition-all font-mono"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowKey(!showKey)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-200 p-1"
+                    title={showKey ? "Ẩn API Key" : "Hiển thị API Key"}
+                  >
+                    {showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                <div className="text-[11px] text-zinc-500 flex justify-between items-center px-1">
+                  <a
+                    href="https://aistudio.google.com/app/apikey"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[#e06b3a] hover:underline flex items-center gap-0.5"
+                  >
+                    <span>Lấy key Google Gemini miễn phí</span>
+                    <ExternalLink className="w-2.5 h-2.5" />
+                  </a>
+                </div>
+              </div>
+
+              {provider === 'gemini' && (
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold text-zinc-300 uppercase tracking-wider">
+                    Model Gemini ưu tiên
+                  </label>
+                  <select
+                    value={geminiModel}
+                    onChange={(e) => setGeminiModel(e.target.value)}
+                    className="w-full px-3 py-2 bg-[#18181c] border border-zinc-700/80 rounded-xl text-zinc-100 text-sm focus:outline-none focus:border-[#e06b3a] transition-all cursor-pointer"
+                  >
+                    <option value="auto">Tự động chọn & Fallback (Auto-detect)</option>
+                    {availableModels.map((m) => (
+                      <option key={m} value={m}>{m}</option>
+                    ))}
+                  </select>
+                </div>
               )}
             </div>
-            <div className="relative">
-              <input
-                type={showKey ? "text" : "password"}
-                value={apiKey}
-                onChange={(e) => {
-                  setApiKey(e.target.value);
-                  setTestState({ status: 'idle' });
-                }}
-                placeholder={hasEnvKey ? "•••••••••••••••••••••••• (Đã có key build sẵn)" : "Dán mã AI Studio API Key (AIzaSy...)"}
-                className="w-full px-3.5 py-2.5 pr-10 bg-[#18181c] border border-zinc-700/80 rounded-xl text-zinc-100 placeholder-zinc-500 text-sm focus:outline-none focus:border-[#e06b3a] transition-all font-mono"
-              />
-              <button
-                type="button"
-                onClick={() => setShowKey(!showKey)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-200 p-1"
-                title={showKey ? "Ẩn API Key" : "Hiển thị API Key"}
-              >
-                {showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
+          )}
+
+          {/* OpenAI API Key & Model Configuration */}
+          {provider === 'openai' && (
+            <div className="space-y-4">
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-semibold text-zinc-300 uppercase tracking-wider">
+                    OpenAI API Key
+                  </label>
+                </div>
+                <div className="relative">
+                  <input
+                    type={showKey ? "text" : "password"}
+                    value={openaiKey}
+                    onChange={(e) => {
+                      setOpenaiKey(e.target.value);
+                      setTestState({ status: 'idle' });
+                    }}
+                    placeholder="Dán mã OpenAI API Key (sk-...)"
+                    className="w-full px-3.5 py-2.5 pr-10 bg-[#18181c] border border-zinc-700/80 rounded-xl text-zinc-100 placeholder-zinc-500 text-sm focus:outline-none focus:border-[#e06b3a] transition-all font-mono"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowKey(!showKey)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-200 p-1"
+                    title={showKey ? "Ẩn API Key" : "Hiển thị API Key"}
+                  >
+                    {showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                <div className="text-[11px] text-zinc-500 flex justify-between items-center px-1">
+                  <a
+                    href="https://platform.openai.com/api-keys"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[#e06b3a] hover:underline flex items-center gap-0.5"
+                  >
+                    <span>Lấy OpenAI API Key</span>
+                    <ExternalLink className="w-2.5 h-2.5" />
+                  </a>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="block text-xs font-semibold text-zinc-300 uppercase tracking-wider">
+                  Model OpenAI ưu tiên
+                </label>
+                <select
+                  value={openaiModel}
+                  onChange={(e) => setOpenaiModel(e.target.value)}
+                  className="w-full px-3 py-2 bg-[#18181c] border border-zinc-700/80 rounded-xl text-zinc-100 text-sm focus:outline-none focus:border-[#e06b3a] transition-all cursor-pointer"
+                >
+                  <option value="auto">Tự động chọn & Fallback (Auto-detect)</option>
+                  {availableModels.map((m) => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                </select>
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Test API Key Button & Diagnostics */}
           <div className="space-y-2">
@@ -185,7 +368,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, o
           <div className="flex items-center justify-between text-[11px] text-zinc-500 pt-2 border-t border-zinc-800">
             <span className="flex items-center gap-1">
               <HelpCircle className="w-3.5 h-3.5" />
-              <span>Tự động chuyển đổi model dự phòng khi model chính bận</span>
+              <span>Tự động chuyển đổi sang model dự phòng nếu lỗi hạn mức</span>
             </span>
           </div>
 

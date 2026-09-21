@@ -653,6 +653,139 @@ export async function identifyProviderAndModels(apiKey: string): Promise<Provide
   throw new Error('Định dạng API Key không hợp lệ. Gemini bắt đầu bằng AIzaSy, OpenAI bắt đầu bằng sk-.');
 }
 
+export interface UnifiedApiConfig {
+  provider: 'gemini' | 'openai';
+  apiKey: string;
+  selectedModel: string;
+}
+
+export function getUnifiedApiConfig(): UnifiedApiConfig {
+  const provider = (localStorage.getItem('API_PROVIDER') || 'auto') as 'auto' | 'gemini' | 'openai';
+  const geminiKey = localStorage.getItem('GEMINI_API_KEY') || import.meta.env.VITE_GEMINI_API_KEY || '';
+  const openaiKey = localStorage.getItem('OPENAI_API_KEY') || '';
+  const geminiModel = localStorage.getItem('GEMINI_SELECTED_MODEL') || 'auto';
+  const openaiModel = localStorage.getItem('OPENAI_SELECTED_MODEL') || 'auto';
+
+  // Explicit choice
+  if (provider === 'gemini') {
+    return {
+      provider: 'gemini',
+      apiKey: geminiKey,
+      selectedModel: geminiModel,
+    };
+  }
+
+  if (provider === 'openai') {
+    return {
+      provider: 'openai',
+      apiKey: openaiKey || (geminiKey.startsWith('sk-') ? geminiKey : ''),
+      selectedModel: openaiModel,
+    };
+  }
+
+  // Auto-detect mode
+  const activeKey = geminiKey || openaiKey;
+  if (activeKey.startsWith('sk-')) {
+    return {
+      provider: 'openai',
+      apiKey: activeKey,
+      selectedModel: openaiModel,
+    };
+  }
+
+  return {
+    provider: 'gemini',
+    apiKey: activeKey,
+    selectedModel: geminiModel,
+  };
+}
+
+export async function getAvailableModelsForProvider(provider: 'gemini' | 'openai', apiKey: string): Promise<string[]> {
+  const cleanKey = apiKey.trim();
+  if (!cleanKey) return [];
+
+  try {
+    if (provider === 'gemini') {
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${cleanKey}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data && Array.isArray(data.models)) {
+          const discovered: string[] = [];
+          for (const m of data.models) {
+            const name = m.name?.replace(/^models\//, '');
+            if (!name) continue;
+
+            const supportsGenerate = m.supportedGenerationMethods?.includes('generateContent');
+            const isGemini = name.toLowerCase().includes('gemini');
+            const isExcluded =
+              name.includes('embedding') ||
+              name.includes('tts') ||
+              name.includes('whisper') ||
+              name.includes('imagen') ||
+              name.includes('aqa') ||
+              name.includes('bidi') ||
+              name.includes('vision-preview');
+
+            if (supportsGenerate && isGemini && !isExcluded) {
+              discovered.push(name);
+            }
+          }
+
+          if (discovered.length > 0) {
+            return discovered.sort((a, b) => {
+              const score = (modelName: string) => {
+                const nameLower = modelName.toLowerCase();
+                if (nameLower.includes('2.5-flash')) return 100;
+                if (nameLower.includes('2.0-flash')) return 90;
+                if (nameLower.includes('1.5-flash')) return 80;
+                if (nameLower.includes('2.5-pro')) return 70;
+                if (nameLower.includes('2.0-pro')) return 60;
+                if (nameLower.includes('1.5-pro')) return 50;
+                if (nameLower.includes('flash')) return 40;
+                if (nameLower.includes('pro')) return 30;
+                return 0;
+              };
+              return score(b) - score(a);
+            });
+          }
+        }
+      }
+      return DEFAULT_GEMINI_MODELS;
+    } else if (provider === 'openai') {
+      const res = await fetch('https://api.openai.com/v1/models', {
+        headers: {
+          'Authorization': `Bearer ${cleanKey}`
+        }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && Array.isArray(data.data)) {
+          const discovered: string[] = [];
+          for (const m of data.data) {
+            const name = m.id;
+            if (name.startsWith('gpt-4o') || name === 'gpt-4-vision-preview') {
+              discovered.push(name);
+            }
+          }
+
+          if (discovered.length > 0) {
+            return discovered.sort((a, b) => {
+              if (a.includes('mini') && !b.includes('mini')) return -1;
+              if (!a.includes('mini') && b.includes('mini')) return 1;
+              return b.localeCompare(a);
+            });
+          }
+        }
+      }
+      return DEFAULT_OPENAI_MODELS;
+    }
+  } catch (e) {
+    console.warn(`Failed to fetch models for ${provider}:`, e);
+  }
+
+  return provider === 'gemini' ? DEFAULT_GEMINI_MODELS : DEFAULT_OPENAI_MODELS;
+}
+
 // Direct client-side Gemini Vision OCR & Translation API connector
 
 export interface PipelineMetrics {
@@ -745,9 +878,10 @@ export async function batchTranslateTextsClient(
   apiKey: string
 ): Promise<{ id: string; translated_text: string }[]> {
   if (items.length === 0) return [];
-  const cleanApiKey = apiKey.trim();
+  const config = getUnifiedApiConfig();
+  const cleanApiKey = config.apiKey.trim();
   if (!cleanApiKey) {
-    throw new Error('API_KEY_MISSING: Chưa tìm thấy Gemini API Key.');
+    throw new Error('API_KEY_MISSING: Chưa cấu hình API Key. Vui lòng vào Cài đặt để thêm API Key.');
   }
 
   const targetLangStr = targetLang === 'vi' ? 'Vietnamese (tiếng Việt)' : 'English';
@@ -776,16 +910,21 @@ ${JSON.stringify(items, null, 2)}`;
   });
 
   let providerInfo = cachedProviderInfo;
-  if (!providerInfo || !providerInfo.models.length) {
+  if (!providerInfo || providerInfo.provider !== config.provider || !providerInfo.models.length) {
     try {
       providerInfo = await identifyProviderAndModels(cleanApiKey);
     } catch {
-      providerInfo = { provider: 'gemini', models: DEFAULT_GEMINI_MODELS };
+      providerInfo = { provider: config.provider, models: config.provider === 'openai' ? DEFAULT_OPENAI_MODELS : DEFAULT_GEMINI_MODELS };
     }
   }
 
+  let modelsToTry = providerInfo.models;
+  if (config.selectedModel && config.selectedModel !== 'auto') {
+    modelsToTry = [config.selectedModel, ...providerInfo.models.filter(m => m !== config.selectedModel)];
+  }
+
   if (providerInfo.provider === 'openai') {
-    for (const model of providerInfo.models) {
+    for (const model of modelsToTry) {
       try {
         const res = await fetch('https://api.openai.com/v1/chat/completions', {
           method: 'POST',
@@ -837,7 +976,7 @@ ${JSON.stringify(items, null, 2)}`;
       }
     }
   } else {
-    for (const model of providerInfo.models) {
+    for (const model of modelsToTry) {
       try {
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${cleanApiKey}`;
         const res = await fetch(url, {
@@ -867,9 +1006,10 @@ export async function runOcrAndTranslationClient(
   apiKey: string,
   pageIdentifier?: string | number
 ): Promise<{ ocr_results: OCRBoxItem[]; translations: TranslationItem[]; model_used?: string; jpegBase64: string }> {
-  const cleanApiKey = apiKey.trim();
+  const config = getUnifiedApiConfig();
+  const cleanApiKey = config.apiKey.trim();
   if (!cleanApiKey) {
-    throw new Error('API_KEY_MISSING: Chưa tìm thấy Gemini API Key. Vui lòng vào Cài đặt để thêm API Key.');
+    throw new Error('API_KEY_MISSING: Chưa cấu hình API Key. Vui lòng vào Cài đặt để thêm API Key.');
   }
 
   // Always convert input image to JPEG Base64 for maximum Gemini API compatibility
@@ -943,7 +1083,7 @@ Return a valid JSON array of all detected speech bubbles.`;
   });
 
   let providerInfo = cachedProviderInfo;
-  if (!providerInfo || !providerInfo.models.length) {
+  if (!providerInfo || providerInfo.provider !== config.provider || !providerInfo.models.length) {
     try {
       providerInfo = await identifyProviderAndModels(cleanApiKey);
     } catch (e: any) {
@@ -951,10 +1091,15 @@ Return a valid JSON array of all detected speech bubbles.`;
     }
   }
 
+  let modelsToTry = providerInfo.models;
+  if (config.selectedModel && config.selectedModel !== 'auto') {
+    modelsToTry = [config.selectedModel, ...providerInfo.models.filter(m => m !== config.selectedModel)];
+  }
+
   let lastModelError: any = null;
 
   if (providerInfo.provider === 'openai') {
-    const openAiModels = providerInfo.models;
+    const openAiModels = modelsToTry;
     let lastOpenAiError: any = null;
 
     for (const model of openAiModels) {
@@ -1112,7 +1257,7 @@ Return a valid JSON array of all detected speech bubbles.`;
     throw lastOpenAiError || new Error('API_QUOTA_EXCEEDED: Tất cả các phiên bản model OpenAI đều tạm thời quá tải hoặc hết hạn mức.');
   } else {
     // Multi-model fallback loop: tries Gemini models sequentially
-    for (const model of providerInfo.models) {
+    for (const model of modelsToTry) {
       try {
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${cleanApiKey}`;
         const response = await fetch(url, {
