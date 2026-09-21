@@ -1063,6 +1063,32 @@ app.delete('/api/v1/jobs/:jobId', (req, res) => {
   res.json({ status: 'deleted', job_id: req.params.jobId });
 });
 
+// Summarize story
+app.post('/api/v1/summarize-story', async (req, res) => {
+  const { title, chapterTitles } = req.body;
+  if (!title || !chapterTitles || !Array.isArray(chapterTitles)) {
+    return res.status(400).json({ error: 'Thiếu thông tin truyện.' });
+  }
+
+  const ai = getGeminiClient();
+  if (!ai) {
+    return res.status(500).json({ error: 'Gemini API chưa được cấu hình.' });
+  }
+
+  try {
+    const prompt = `Bạn là một chuyên gia tóm tắt truyện. Hãy tóm tắt nội dung bộ truyện "${title}" dựa trên danh sách các chương sau: ${chapterTitles.join(', ')}. Hãy tóm tắt ngắn gọn trong khoảng 200 từ.`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-3.8-flash',
+      contents: prompt,
+    });
+
+    res.json({ summary: response.text });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Không thể tạo tóm tắt.' });
+  }
+});
+
 // OpenAPI Spec Endpoint
 app.get('/api/v1/openapi.json', (req, res) => {
   res.json({

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Folder, BookOpen, Trash2, ArrowUpDown, ExternalLink, Link2 } from 'lucide-react';
 import { RecentItem } from '../types';
 import { sortChapters } from '../lib/chapterSort';
@@ -19,6 +19,34 @@ export const FolderChaptersModal: React.FC<FolderChaptersModalProps> = ({
   onDeleteChapter,
 }) => {
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+  const [summary, setSummary] = useState<string | null>(null);
+  const [loadingSummary, setLoadingSummary] = useState(false);
+
+  useEffect(() => {
+    const fetchSummary = async () => {
+      setLoadingSummary(true);
+      try {
+        const response = await fetch('/api/v1/summarize-story', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: folderName,
+            chapterTitles: chapters.map(c => c.title),
+          }),
+        });
+        const data = await response.json();
+        if (data.summary) {
+          setSummary(data.summary);
+        }
+      } catch (err) {
+        console.error('Failed to fetch summary:', err);
+      } finally {
+        setLoadingSummary(false);
+      }
+    };
+
+    fetchSummary();
+  }, [folderName, chapters]);
 
   const sortedChapters = sortChapters(chapters, sortOrder);
 
@@ -73,6 +101,18 @@ export const FolderChaptersModal: React.FC<FolderChaptersModalProps> = ({
                 <X className="w-5 h-5" />
               </button>
             </div>
+          </div>
+          
+          {/* Summary Section */}
+          <div className="mt-4 px-1">
+             {loadingSummary ? (
+               <p className="text-xs text-zinc-500 animate-pulse">Đang tạo tóm tắt truyện...</p>
+             ) : summary ? (
+               <div className="bg-[#0d0d0f] p-3 rounded-xl border border-zinc-800">
+                 <h4 className="text-[11px] font-bold text-zinc-400 uppercase mb-1">Tóm tắt nội dung</h4>
+                 <p className="text-xs text-zinc-300 leading-relaxed">{summary}</p>
+               </div>
+             ) : null}
           </div>
         </div>
 

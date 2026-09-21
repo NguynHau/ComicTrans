@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import localforage from 'localforage';
 import {
   ChevronLeft,
   ChevronRight,
@@ -31,6 +32,11 @@ export const MangaReader: React.FC<MangaReaderProps> = ({
   const [viewMode, setViewMode] = useState<'single' | 'scroll'>('single');
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [isSaveModalOpen, setIsSaveModalOpen] = useState(false);
+  
+  // Advanced settings state
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [brightness, setBrightness] = useState(100);
+  const [filterType, setFilterType] = useState<'none' | 'sepia' | 'blue-light'>('none');
 
   const currentPage = pages[currentPageIdx] || pages[0];
 
@@ -103,30 +109,42 @@ export const MangaReader: React.FC<MangaReaderProps> = ({
           )}
         </div>
 
-        {/* Row 2: View modes (Từng ảnh / Cuộn) */}
-        <div className="flex items-center bg-[#141417] border border-zinc-800 rounded-xl p-1 gap-1 w-full">
-          <button
-            onClick={() => setViewMode('single')}
-            className={`flex-1 py-2 px-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1 ${
-              viewMode === 'single'
-                ? 'bg-[#e06b3a] text-white shadow-md shadow-orange-950/40'
-                : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60'
-            }`}
-          >
-            <Maximize2 className="w-3.5 h-3.5 flex-shrink-0" />
-            <span>Từng ảnh</span>
-          </button>
-          <button
-            onClick={() => setViewMode('scroll')}
-            className={`flex-1 py-2 px-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1 ${
-              viewMode === 'scroll'
-                ? 'bg-[#e06b3a] text-white shadow-md shadow-orange-950/40'
-                : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60'
-            }`}
-          >
-            <Scroll className="w-3.5 h-3.5 flex-shrink-0" />
-            <span>Cuộn</span>
-          </button>
+          {/* Row 2: View modes & Settings */}
+          <div className="flex items-center bg-[#141417] border border-zinc-800 rounded-xl p-1 gap-1 w-full">
+            <button
+              onClick={() => setViewMode('single')}
+              className={`flex-1 py-2 px-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1 ${
+                viewMode === 'single'
+                  ? 'bg-[#e06b3a] text-white shadow-md shadow-orange-950/40'
+                  : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60'
+              }`}
+            >
+              <Maximize2 className="w-3.5 h-3.5 flex-shrink-0" />
+              <span>Lật trang</span>
+            </button>
+            <button
+              onClick={() => setViewMode('scroll')}
+              className={`flex-1 py-2 px-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1 ${
+                viewMode === 'scroll'
+                  ? 'bg-[#e06b3a] text-white shadow-md shadow-orange-950/40'
+                  : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60'
+              }`}
+            >
+              <Scroll className="w-3.5 h-3.5 flex-shrink-0" />
+              <span>Cuộn</span>
+            </button>
+            <button
+              onClick={() => setIsSettingsOpen(prev => !prev)}
+              className={`py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1 ${
+                isSettingsOpen
+                  ? 'bg-zinc-700 text-white'
+                  : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60'
+              }`}
+            >
+              <Lightbulb className="w-4 h-4" />
+            </button>
+          </div>
+          
         </div>
       </div>
 
@@ -140,7 +158,10 @@ export const MangaReader: React.FC<MangaReaderProps> = ({
                 <img
                   src={currentPage.processed_image || currentPage.source_image}
                   alt={`Trang ${currentPage.page_number}`}
-                  className="w-full h-auto object-contain select-none"
+                  className="w-full h-auto object-contain select-none transition-all duration-300"
+                  style={{
+                    filter: `brightness(${brightness}%) ${filterType === 'sepia' ? 'sepia(0.6)' : filterType === 'blue-light' ? 'sepia(0.3) saturate(0.8) hue-rotate(-20deg)' : 'none'}`
+                  }}
                   referrerPolicy="no-referrer"
                 />
 
