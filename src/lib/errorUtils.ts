@@ -208,8 +208,6 @@ export function parseTranslationError(err: any): DetailedError {
   };
 }
 
-import { identifyProviderAndModels, resetCachedProviderInfo } from './clientPipeline';
-
 // Diagnostic API test function
 export async function testGeminiApiKey(apiKey: string): Promise<{
   ok: boolean;
@@ -220,54 +218,23 @@ export async function testGeminiApiKey(apiKey: string): Promise<{
   if (!cleanKey) {
     return {
       ok: false,
-      error: parseTranslationError('Chưa tìm thấy API Key'),
+      error: parseTranslationError('Chưa tìm thấy Gemini API Key'),
     };
   }
 
-  // Clear memory cache before testing a new key to avoid stale provider/model records
-  resetCachedProviderInfo();
+  const testModels = [
+    'gemini-1.5-flash',
+    'gemini-2.0-flash',
+    'gemini-3.8-flash',
+    'gemini-3.6-flash',
+    'gemini-3.5-flash',
+    'gemini-3.1-flash-lite',
+  ];
 
-  try {
-    const providerInfo = await identifyProviderAndModels(cleanKey);
+  let lastError: any = null;
 
-    if (providerInfo.provider === 'openai') {
-      // Test OpenAI key validity
-      const m = providerInfo.models[0] || 'gpt-4o-mini';
-      const res = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${cleanKey}`
-        },
-        body: JSON.stringify({
-          model: m,
-          messages: [{ role: 'user', content: 'Ping test' }],
-          max_tokens: 5
-        })
-      });
-
-      const data = await res.json().catch(() => ({}));
-      if (res.ok) {
-        return {
-          ok: true,
-          model: `OpenAI: ${m}`,
-        };
-      }
-
-      if (res.status === 401 || res.status === 403) {
-        return {
-          ok: false,
-          error: parseTranslationError(`API_KEY_INVALID: OpenAI API Key không hợp lệ. (${data?.error?.message || 'Unauthorized'})`),
-        };
-      }
-
-      return {
-        ok: false,
-        error: parseTranslationError(`OpenAI API Error: ${data?.error?.message || `HTTP ${res.status}`}`),
-      };
-    } else {
-      // Test Gemini key validity
-      const m = providerInfo.models[0] || 'gemini-1.5-flash';
+  for (const m of testModels) {
+    try {
       const res = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${cleanKey}`,
         {
@@ -280,31 +247,38 @@ export async function testGeminiApiKey(apiKey: string): Promise<{
       );
 
       const data = await res.json().catch(() => ({}));
+
       if (res.ok) {
         return {
           ok: true,
-          model: `Gemini: ${m}`,
+          model: m,
         };
       }
 
+      // If invalid key, stop immediately
       if (res.status === 400 || res.status === 403) {
         return {
           ok: false,
-          error: parseTranslationError(`API_KEY_INVALID: Gemini API Key không hợp lệ. (${data?.error?.message || 'Unauthorized'})`),
+          error: parseTranslationError(`API_KEY_INVALID: ${data?.error?.message || 'Key không hợp lệ'}`),
         };
       }
 
-      return {
-        ok: false,
-        error: parseTranslationError(`Gemini API Error: ${data?.error?.message || `HTTP ${res.status}`}`),
-      };
+      // If 429 quota, save and try next model
+      if (res.status === 429) {
+        lastError = new Error(`Model ${m} bị giới hạn tần suất (429)`);
+        continue;
+      }
+
+      lastError = new Error(data?.error?.message || `HTTP ${res.status}`);
+    } catch (e: any) {
+      lastError = e;
     }
-  } catch (e: any) {
-    return {
-      ok: false,
-      error: parseTranslationError(e.message || 'Lỗi nhận diện và kiểm tra API Key'),
-    };
   }
+
+  return {
+    ok: false,
+    error: parseTranslationError(lastError || 'Lỗi kiểm tra API Key'),
+  };
 }
 
 export const classifyPipelineError = parseTranslationError;
