@@ -144,6 +144,29 @@ export function App() {
     }
   };
 
+  const handleMoveRecentToFolder = async (recentId: string, folderId: string) => {
+    try {
+      const targetFolder = folders.find(f => f.id === folderId);
+      const updatedRecents = recents.map(r => {
+        if (r.id === recentId) {
+          return {
+            ...r,
+            folderId: folderId === 'uncategorized' ? undefined : folderId,
+            folderName: folderId === 'uncategorized' ? undefined : (targetFolder ? targetFolder.name : undefined)
+          };
+        }
+        return r;
+      });
+      setRecents(updatedRecents);
+      const updatedItem = updatedRecents.find(r => r.id === recentId);
+      if (updatedItem) {
+        await saveRecentItemToStorage(updatedItem);
+      }
+    } catch (err) {
+      console.warn('Failed to move chapter to folder:', err);
+    }
+  };
+
   useEffect(() => {
     if (activeTab === 'settings') {
       const storedKey = localStorage.getItem('GEMINI_API_KEY') || '';
@@ -1256,9 +1279,11 @@ export function App() {
               ? recents.filter((r) => !r.folderId || !folders.some((f) => f.id === r.folderId))
               : recents.filter((r) => r.folderId === activeFolderForSheet.id)
           }
+          folders={folders}
           onClose={() => setActiveFolderForSheet(null)}
           onSelectChapter={(item) => setSelectedSavedManga(item)}
           onDeleteChapter={(id, e) => handleDeleteRecent(id, e)}
+          onMoveToFolder={(id, folderId) => handleMoveRecentToFolder(id, folderId)}
         />
       )}
 
