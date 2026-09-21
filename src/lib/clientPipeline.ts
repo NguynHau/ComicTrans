@@ -3,7 +3,98 @@
 
 import { MangaPage, OCRBoxItem, TranslationItem } from '../types';
 
-// Helper to wrap text based on character width limits
+// Dedicated offscreen measurement context for sub-pixel text metrics
+let measureCanvas: HTMLCanvasElement | null = null;
+let measureCtx: CanvasRenderingContext2D | null = null;
+
+function getMeasureContext(): CanvasRenderingContext2D | null {
+  if (typeof document === 'undefined') return null;
+  if (!measureCanvas) {
+    measureCanvas = document.createElement('canvas');
+    measureCanvas.width = 100;
+    measureCanvas.height = 100;
+  }
+  if (!measureCtx) {
+    measureCtx = measureCanvas.getContext('2d');
+  }
+  return measureCtx;
+}
+
+// Compute the safe horizontal chord width available inside a geometric bubble at vertical offset relY
+export function getSafeChordWidth(
+  relY: number,
+  halfW: number,
+  halfH: number,
+  shape: string = 'ellipse',
+  safeMargin: number = 0.86
+): number {
+  if (halfW <= 0 || halfH <= 0) return 10;
+  const usableA = halfW * safeMargin;
+  const usableB = halfH * safeMargin;
+
+  if (shape === 'rectangle') {
+    // For rectangular narration boxes, safe width is uniform across the vertical span
+    if (Math.abs(relY) > usableB) return 0;
+    return Math.max(10, usableA * 2);
+  }
+
+  // For elliptical, circular, oval, and cloud dialogue balloons:
+  // Math: x^2 / a^2 + y^2 / b^2 <= 1  ==>  x = a * sqrt(1 - (y/b)^2)
+  const normY = Math.abs(relY) / Math.max(1, usableB);
+  if (normY >= 1.0) return 0;
+
+  const chord = 2 * usableA * Math.sqrt(Math.max(0, 1 - normY * normY));
+  return Math.max(0, chord);
+}
+
+// Split excessively long single words (e.g., compound words in narrow manga columns)
+function breakLongWord(
+  word: string,
+  maxPixels: number,
+  ctx: CanvasRenderingContext2D
+): string[] {
+  if (ctx.measureText(word).width <= maxPixels || word.length <= 2) {
+    return [word];
+  }
+
+  // Attempt to split at existing punctuation/hyphens first
+  if (word.includes('-')) {
+    const subParts = word.split('-');
+    const res: string[] = [];
+    let cur = '';
+    for (const sp of subParts) {
+      const cand = cur ? `${cur}-${sp}` : sp;
+      if (ctx.measureText(cand).width <= maxPixels) {
+        cur = cand;
+      } else {
+        if (cur) res.push(`${cur}-`);
+        cur = sp;
+      }
+    }
+    if (cur) res.push(cur);
+    if (res.length > 1) return res;
+  }
+
+  // Character-level hyphenation break
+  const pieces: string[] = [];
+  let currentChunk = '';
+  for (let i = 0; i < word.length; i++) {
+    const char = word[i];
+    const candidate = currentChunk + char;
+    const testWithHyphen = i < word.length - 1 ? `${candidate}-` : candidate;
+
+    if (ctx.measureText(testWithHyphen).width <= maxPixels || currentChunk.length === 0) {
+      currentChunk += char;
+    } else {
+      pieces.push(`${currentChunk}-`);
+      currentChunk = char;
+    }
+  }
+  if (currentChunk) pieces.push(currentChunk);
+  return pieces.length > 0 ? pieces : [word];
+}
+
+// Helper to wrap text based on character width limits (fallback)
 export function wrapText(text: string, maxCharsPerLine: number): string[] {
   const words = (text || '').trim().split(/\s+/);
   const lines: string[] = [];
@@ -23,42 +114,182 @@ export function wrapText(text: string, maxCharsPerLine: number): string[] {
   return lines;
 }
 
-// Calculate the optimal font size and layout for fitting text inside a bubble automatically
+export interface TypesetResult {
+  fontSize: number;
+  lines: string[];
+  lineHeight: number;
+  totalH: number;
+}
+
+// High-precision Geometric Shape-Aware Typesetting & Layout Engine
+// Mathematically guarantees that translated text conforms to bubble curvature and never overflows
 export function layoutDialogueText(
   text: string,
   bubbleWidth: number,
-  bubbleHeight: number
-): { fontSize: number; lines: string[]; lineHeight: number; totalH: number } {
-  // Use 82% usable width/height to guarantee a safe internal margin inside speech bubbles
-  const usableWidth = Math.max(20, bubbleWidth * 0.82);
-  const usableHeight = Math.max(16, bubbleHeight * 0.82);
+  bubbleHeight: number,
+  bubbleShape: string = 'ellipse',
+  customCtx?: CanvasRenderingContext2D | null
+): TypesetResult {
+  const rawText = (text || '').trim().replace(/[\r\n]+/g, ' ');
+  if (!rawText) {
+    return { fontSize: 12, lines: [], lineHeight: 14, totalH: 0 };
+  }
 
+  const ctx = customCtx || getMeasureContext();
+  const halfW = bubbleWidth / 2;
+  const halfH = bubbleHeight / 2;
+  const isTallNarrow = bubbleHeight / Math.max(1, bubbleWidth) > 1.8;
+  const isWideFlat = bubbleWidth / Math.max(1, bubbleHeight) > 2.0;
+
+  // Maximum and minimum font boundaries based on bubble geometry
   const maxFont = Math.min(
-    Math.round(bubbleHeight * 0.35),
-    Math.round(bubbleWidth * 0.25),
-    36
+    36,
+    Math.max(12, Math.round(isWideFlat ? bubbleHeight * 0.45 : bubbleHeight * 0.32)),
+    Math.max(12, Math.round(bubbleWidth * 0.28))
   );
-  const minFont = Math.max(10, Math.min(13, Math.round(usableHeight * 0.16)));
+  const minFont = Math.max(6, Math.min(9, Math.round(bubbleHeight * 0.08)));
 
-  for (let fontSize = Math.max(12, maxFont); fontSize >= minFont; fontSize -= 1) {
-    const charWidth = fontSize * 0.58;
-    const maxChars = Math.max(3, Math.floor(usableWidth / charWidth));
-    const lines = wrapText(text, maxChars);
-    const lineHeight = fontSize * 1.25;
-    const totalH = lines.length * lineHeight;
+  if (!ctx) {
+    // Fallback heuristic if canvas context is unavailable
+    const usableWidth = Math.max(20, bubbleWidth * 0.82);
+    const usableHeight = Math.max(16, bubbleHeight * 0.82);
+    for (let fontSize = maxFont; fontSize >= minFont; fontSize -= 1) {
+      const charW = fontSize * 0.58;
+      const maxChars = Math.max(2, Math.floor(usableWidth / charW));
+      const lines = wrapText(rawText, maxChars);
+      const lineHeight = fontSize * 1.22;
+      const totalH = lines.length * lineHeight;
+      if (totalH <= usableHeight) {
+        return { fontSize, lines, lineHeight, totalH };
+      }
+    }
+    const fontSize = minFont;
+    const lines = wrapText(rawText, Math.max(2, Math.floor(usableWidth / (fontSize * 0.58))));
+    const lineHeight = fontSize * 1.22;
+    return { fontSize, lines, lineHeight, totalH: lines.length * lineHeight };
+  }
 
-    if (totalH <= usableHeight) {
-      return { fontSize, lines, lineHeight, totalH };
+  // Iterate from largest font size down to smallest candidate
+  for (let fontSize = maxFont; fontSize >= minFont; fontSize -= 1) {
+    ctx.font = `700 ${fontSize}px 'Plus Jakarta Sans', 'Segoe UI', Arial, sans-serif`;
+    const lineHeight = Math.max(8, Math.round(fontSize * 1.22));
+
+    // Calculate maximum possible line count that fits within safe height
+    const safeTotalHeight = bubbleHeight * (bubbleShape === 'rectangle' ? 0.88 : 0.84);
+    const maxLinesPossible = Math.max(1, Math.floor(safeTotalHeight / lineHeight));
+
+    // Try each target line count from 1 up to maxLinesPossible
+    for (let targetLineCount = 1; targetLineCount <= maxLinesPossible; targetLineCount++) {
+      const totalH = targetLineCount * lineHeight;
+      if (totalH > safeTotalHeight) continue;
+
+      // Compute chord width constraints for each line index
+      const chordLimits: number[] = [];
+      let isChordValid = true;
+
+      for (let i = 0; i < targetLineCount; i++) {
+        const lineCenterY = -(totalH / 2) + (i + 0.5) * lineHeight;
+        const lineTopY = lineCenterY - lineHeight * 0.45;
+        const lineBotY = lineCenterY + lineHeight * 0.45;
+
+        const wTop = getSafeChordWidth(lineTopY, halfW, halfH, bubbleShape, bubbleShape === 'rectangle' ? 0.88 : 0.84);
+        const wBot = getSafeChordWidth(lineBotY, halfW, halfH, bubbleShape, bubbleShape === 'rectangle' ? 0.88 : 0.84);
+        const limit = Math.min(wTop, wBot);
+
+        // A line needs at least enough width for a couple of characters
+        if (limit < fontSize * 1.2) {
+          isChordValid = false;
+          break;
+        }
+        chordLimits.push(limit);
+      }
+
+      if (!isChordValid) continue;
+
+      // Prepare words and break any word exceeding the maximum chord width
+      const maxAvailableChord = Math.max(...chordLimits);
+      const rawWords = rawText.split(/\s+/).filter(Boolean);
+      const words: string[] = [];
+      for (const w of rawWords) {
+        const pieces = breakLongWord(w, maxAvailableChord, ctx);
+        words.push(...pieces);
+      }
+
+      // Pack words into lines respecting individual chord limits
+      const lines: string[] = [];
+      let wordIdx = 0;
+      let fitFailed = false;
+
+      for (let lineIdx = 0; lineIdx < targetLineCount; lineIdx++) {
+        const maxW = chordLimits[lineIdx];
+        let currentLine = '';
+
+        while (wordIdx < words.length) {
+          const nextWord = words[wordIdx];
+          const testLine = currentLine ? `${currentLine} ${nextWord}` : nextWord;
+          const measuredW = ctx.measureText(testLine).width;
+
+          if (measuredW <= maxW) {
+            currentLine = testLine;
+            wordIdx++;
+          } else {
+            // Cannot fit next word on this line
+            break;
+          }
+        }
+
+        if (currentLine) {
+          lines.push(currentLine);
+        } else if (wordIdx < words.length) {
+          // Even a single word couldn't fit on this line
+          fitFailed = true;
+          break;
+        }
+      }
+
+      // If all words were successfully packed within the allocated line slots
+      if (!fitFailed && wordIdx === words.length && lines.length > 0) {
+        return {
+          fontSize,
+          lines,
+          lineHeight,
+          totalH: lines.length * lineHeight,
+        };
+      }
     }
   }
 
+  // Fallback: Use minFont with aggressive word breaking
   const fontSize = minFont;
-  const charWidth = fontSize * 0.58;
-  const maxChars = Math.max(3, Math.floor(usableWidth / charWidth));
-  const lines = wrapText(text, maxChars);
-  const lineHeight = fontSize * 1.25;
-  const totalH = lines.length * lineHeight;
-  return { fontSize, lines, lineHeight, totalH };
+  ctx.font = `700 ${fontSize}px 'Plus Jakarta Sans', 'Segoe UI', Arial, sans-serif`;
+  const lineHeight = Math.max(7, Math.round(fontSize * 1.2));
+  const fallbackSafeW = Math.max(15, bubbleWidth * (bubbleShape === 'rectangle' ? 0.88 : 0.78));
+
+  const words = rawText.split(/\s+/).filter(Boolean);
+  const safeWords: string[] = [];
+  for (const w of words) {
+    safeWords.push(...breakLongWord(w, fallbackSafeW, ctx));
+  }
+
+  const lines: string[] = [];
+  let currentLine = '';
+  for (const word of safeWords) {
+    const testLine = currentLine ? `${currentLine} ${word}` : word;
+    if (ctx.measureText(testLine).width <= fallbackSafeW || !currentLine) {
+      currentLine = testLine;
+    } else {
+      lines.push(currentLine);
+      currentLine = word;
+    }
+  }
+  if (currentLine) lines.push(currentLine);
+
+  return {
+    fontSize,
+    lines,
+    lineHeight,
+    totalH: lines.length * lineHeight,
+  };
 }
 
 // Scraping function using client-side fallback with multiple CORS proxies (Old-style simple scraper)
@@ -654,8 +885,103 @@ Return a valid JSON array of all detected speech bubbles.`;
   throw lastModelError || new Error('API_QUOTA_EXCEEDED: Tất cả các phiên bản model Gemini đều tạm thời quá tải hoặc hết hạn mức.');
 }
 
+// Sample bubble background color to determine if speech bubble is dark, white, or light halftone
+function getBubbleColorProfile(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  bubbleShape: string,
+  hintBgColor?: string
+): { isDark: boolean; highlightBgColor: string; textColor: string; strokeColor: string } {
+  // If AI explicitly flagged dark hex background
+  if (hintBgColor && /^#[0-9a-fA-F]{6}$/.test(hintBgColor)) {
+    const r = parseInt(hintBgColor.slice(1, 3), 16);
+    const g = parseInt(hintBgColor.slice(3, 5), 16);
+    const b = parseInt(hintBgColor.slice(5, 7), 16);
+    const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+    if (lum < 95) {
+      return {
+        isDark: true,
+        highlightBgColor: 'rgba(16, 16, 20, 0.95)',
+        textColor: '#ffffff',
+        strokeColor: 'rgba(0, 0, 0, 0.8)',
+      };
+    }
+  }
+
+  // Sample pixel luminance inside the bubble perimeter (away from center text)
+  try {
+    const cx = Math.round(x + w / 2);
+    const cy = Math.round(y + h / 2);
+    const samplePoints = [
+      { sx: Math.round(cx - w * 0.32), sy: Math.round(cy - h * 0.32) },
+      { sx: Math.round(cx + w * 0.32), sy: Math.round(cy - h * 0.32) },
+      { sx: Math.round(cx - w * 0.32), sy: Math.round(cy + h * 0.32) },
+      { sx: Math.round(cx + w * 0.32), sy: Math.round(cy + h * 0.32) },
+      { sx: Math.round(cx - w * 0.36), sy: cy },
+      { sx: Math.round(cx + w * 0.36), sy: cy },
+      { sx: cx, sy: Math.round(cy - h * 0.36) },
+      { sx: cx, sy: Math.round(cy + h * 0.36) },
+    ];
+
+    let rSum = 0, gSum = 0, bSum = 0, validSamples = 0;
+    for (const p of samplePoints) {
+      if (p.sx >= 0 && p.sx < ctx.canvas.width && p.sy >= 0 && p.sy < ctx.canvas.height) {
+        const pixel = ctx.getImageData(p.sx, p.sy, 1, 1).data;
+        if (pixel[3] > 128) {
+          rSum += pixel[0];
+          gSum += pixel[1];
+          bSum += pixel[2];
+          validSamples++;
+        }
+      }
+    }
+
+    if (validSamples > 0) {
+      const avgR = Math.round(rSum / validSamples);
+      const avgG = Math.round(gSum / validSamples);
+      const avgB = Math.round(bSum / validSamples);
+      const lum = 0.299 * avgR + 0.587 * avgG + 0.114 * avgB;
+
+      if (lum < 95) {
+        return {
+          isDark: true,
+          highlightBgColor: `rgba(${Math.max(8, avgR - 5)},${Math.max(8, avgG - 5)},${Math.max(8, avgB - 5)}, 0.95)`,
+          textColor: '#ffffff',
+          strokeColor: 'rgba(0, 0, 0, 0.8)',
+        };
+      } else if (lum > 225) {
+        return {
+          isDark: false,
+          highlightBgColor: 'rgba(255, 255, 255, 0.96)',
+          textColor: '#0c0c10',
+          strokeColor: 'rgba(255, 255, 255, 0.85)',
+        };
+      } else {
+        return {
+          isDark: false,
+          highlightBgColor: `rgba(${avgR},${avgG},${avgB}, 0.96)`,
+          textColor: '#0c0c10',
+          strokeColor: `rgba(${Math.min(255, avgR + 25)},${Math.min(255, avgG + 25)},${Math.min(255, avgB + 25)}, 0.85)`,
+        };
+      }
+    }
+  } catch {
+    // fallback if getImageData is restricted
+  }
+
+  return {
+    isDark: false,
+    highlightBgColor: 'rgba(255, 255, 255, 0.96)',
+    textColor: '#0c0c10',
+    strokeColor: 'rgba(255, 255, 255, 0.85)',
+  };
+}
+
 // Client-Side Canvas-based Inpainting and Text Render
-// This function replaces the backend server's SVG + Sharp rendering flow.
+// This function cleans previous text inside speech bubbles and renders geometric shape-conforming translations
 export async function renderInpaintedTranslatedImageClient(
   sourceImageInput: string,
   ocrResults: OCRBoxItem[],
@@ -679,12 +1005,13 @@ export async function renderInpaintedTranslatedImageClient(
           throw new Error('Không thể khởi tạo môi trường Canvas 2D.');
         }
 
-        // 1. Draw original image onto canvas
+        // 1. Draw original image onto canvas (preserving 100% of the artwork)
         ctx.drawImage(img, 0, 0);
 
-        // 2. Clear original text (Inpaint) and Typeset translated text for each bubble
+        // 2. Typeset translated text and render snug text background highlight for each dialogue bubble
         ocrResults.forEach((item, idx) => {
-          const transItem = translations[idx];
+          // Robust match by ID or array index
+          const transItem = translations.find((t) => t.id === item.id) || translations[idx];
           const textToRender = transItem ? transItem.translated_text : '';
           if (!textToRender) return;
 
@@ -702,56 +1029,77 @@ export async function renderInpaintedTranslatedImageClient(
           // @ts-ignore
           const bubbleShape = item.bbox.bubble_shape || 'ellipse';
           // @ts-ignore
-          const bgColor = item.bbox.bg_color || '#ffffff';
+          const bgColorHint = item.bbox.bg_color;
+
+          // Compute optimal layout matching chord constraints
+          const layout = layoutDialogueText(textToRender, w, h, bubbleShape, ctx);
+          if (layout.lines.length === 0) return;
 
           ctx.save();
-
-          // A. Inpainting: Solid white background with subtle 2% safety margin covering exact speech bubble position
-          const padW = w * 0.02;
-          const padH = h * 0.02;
-          const ix = Math.max(0, x - padW);
-          const iy = Math.max(0, y - padH);
-          const iw = w + padW * 2;
-          const ih = h + padH * 2;
-
-          ctx.fillStyle = '#ffffff';
-          if (bubbleShape === 'rectangle') {
-            ctx.beginPath();
-            ctx.roundRect(ix, iy, iw, ih, Math.min(10, Math.min(iw, ih) * 0.2));
-            ctx.fill();
-          } else {
-            const cx = x + w / 2;
-            const cy = y + h / 2;
-            const rx = Math.max(3, iw / 2);
-            const ry = Math.max(3, ih / 2);
-            ctx.beginPath();
-            ctx.ellipse(cx, cy, rx, ry, 0, 0, 2 * Math.PI);
-            ctx.fill();
-          }
-
-          // B. Typesetting & Render Translated Text in Crisp Black
-          const layout = layoutDialogueText(textToRender, w, h);
           ctx.font = `700 ${layout.fontSize}px 'Plus Jakarta Sans', 'Segoe UI', Arial, sans-serif`;
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
 
-          // Solid black text with subtle white halo for crisp readability
-          ctx.strokeStyle = '#ffffff';
-          ctx.lineWidth = Math.max(1.5, layout.fontSize * 0.12);
-          ctx.lineJoin = 'round';
-          ctx.fillStyle = '#0a0a0c'; // High-contrast black text
-
+          const colorProfile = getBubbleColorProfile(ctx, x, y, w, h, bubbleShape, bgColorHint);
           const cx = x + w / 2;
           const cy = y + h / 2;
           const lineHeight = layout.lineHeight;
           const totalH = layout.totalH;
+          const startY = cy - totalH / 2 + lineHeight / 2;
 
-          let currentY = cy - totalH / 2 + lineHeight / 2;
+          // A. Snug text background highlight (Nền ôm sát vừa vặn nội dung từng dòng chữ)
+          // KHÔNG vẽ hình tròn, oval hay khung bao toàn bộ bong bóng để giữ nguyên viền, cuống và hình vẽ gốc
+          ctx.fillStyle = colorProfile.highlightBgColor;
+          ctx.shadowColor = colorProfile.isDark ? 'rgba(0, 0, 0, 0.25)' : 'rgba(0, 0, 0, 0.08)';
+          ctx.shadowBlur = Math.max(1, Math.round(layout.fontSize * 0.12));
 
-          layout.lines.forEach((line) => {
-            ctx.strokeText(line, cx, currentY);
-            ctx.fillText(line, cx, currentY);
-            currentY += lineHeight;
+          const padX = Math.max(3, Math.round(layout.fontSize * 0.28));
+          const padY = Math.max(1.5, Math.round(layout.fontSize * 0.12));
+
+          layout.lines.forEach((line, lineIdx) => {
+            const trimmed = line.trim();
+            if (!trimmed) return;
+
+            const currentY = startY + lineIdx * lineHeight;
+            const measuredW = ctx.measureText(trimmed).width;
+
+            // Constrain highlight width to never exceed safe inner boundary of the bubble
+            const safeW = getSafeChordWidth(currentY - cy, w / 2, h / 2, bubbleShape, 0.90);
+            const hlWidth = Math.max(4, Math.min(safeW, measuredW + padX * 2));
+            const hlHeight = Math.max(4, lineHeight + padY * 2);
+            const hlX = cx - hlWidth / 2;
+            const hlY = currentY - hlHeight / 2;
+            const hlRadius = Math.min(4, hlHeight * 0.25);
+
+            ctx.beginPath();
+            if (typeof ctx.roundRect === 'function') {
+              ctx.roundRect(hlX, hlY, hlWidth, hlHeight, hlRadius);
+            } else {
+              ctx.rect(hlX, hlY, hlWidth, hlHeight);
+            }
+            ctx.fill();
+          });
+
+          // Clear shadow blur before text stroke/fill
+          ctx.shadowColor = 'transparent';
+          ctx.shadowBlur = 0;
+
+          // B. Typeset & Render Translated Text in high-contrast styling
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+
+          // Subtle contrast stroke
+          ctx.strokeStyle = colorProfile.strokeColor;
+          ctx.lineWidth = Math.max(0.6, layout.fontSize * 0.08);
+          ctx.lineJoin = 'round';
+          ctx.lineCap = 'round';
+          ctx.fillStyle = colorProfile.textColor;
+
+          layout.lines.forEach((line, lineIdx) => {
+            const trimmed = line.trim();
+            if (!trimmed) return;
+
+            const currentY = startY + lineIdx * lineHeight;
+            ctx.strokeText(trimmed, cx, currentY);
+            ctx.fillText(trimmed, cx, currentY);
           });
 
           ctx.restore();
@@ -765,7 +1113,7 @@ export async function renderInpaintedTranslatedImageClient(
       }
     };
 
-    img.onerror = (e) => {
+    img.onerror = () => {
       reject(new Error('Không thể tải hoặc hiển thị hình ảnh gốc trên Canvas.'));
     };
 
