@@ -116,9 +116,7 @@ export const FolderChaptersModal: React.FC<FolderChaptersModalProps> = ({
                     </h4>
                     {item.sourceUrl && item.sourceUrl.startsWith('http') && (
                       <span
-                        onClick={(e) => handleOpenSourceUrl(item.sourceUrl!, e)}
-                        className="text-xs text-[#9CA3AF] hover:text-[#ff7e40] hover:underline font-normal truncate block mt-0.5 cursor-pointer max-w-full"
-                        style={{ color: '#9CA3AF' }}
+                        className="text-[10px] text-zinc-500 font-normal break-all block mt-0.5"
                         title={item.sourceUrl}
                       >
                         {item.sourceUrl}
@@ -136,16 +134,32 @@ export const FolderChaptersModal: React.FC<FolderChaptersModalProps> = ({
                   <p className="text-[10px] text-zinc-500 font-medium">{item.timestamp}</p>
                 </div>
 
-                {/* Action Buttons: Delete Chapter */}
-                <div className="absolute top-3 right-3 flex items-center gap-1">
+                {/* Action Buttons: Delete & Open Link */}
+                <div className="absolute top-3 right-3 flex flex-col items-center gap-2">
                   <button
                     type="button"
-                    onClick={(e) => onDeleteChapter(item.id, e)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (confirm(`Bạn có chắc chắn muốn xóa chương "${item.title}"?`)) {
+                        onDeleteChapter(item.id, e);
+                      }
+                    }}
                     className="p-1.5 rounded-lg text-zinc-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
                     title="Xóa chap này"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
+                  
+                  {item.sourceUrl && item.sourceUrl.startsWith('http') && (
+                    <button
+                      type="button"
+                      onClick={(e) => handleOpenSourceUrl(item.sourceUrl!, e)}
+                      className="p-1.5 rounded-lg text-zinc-500 hover:text-[#e06b3a] hover:bg-orange-500/10 transition-colors"
+                      title="Truy cập link gốc"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                 </div>
               </div>
             ))

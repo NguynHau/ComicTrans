@@ -24,7 +24,7 @@ import {
 import { 
   RefreshCw, BookOpen, Key, Sparkles, ShieldCheck, 
   CheckCircle2, AlertCircle, ArrowUpCircle, ExternalLink,
-  Folder, Plus, FolderPlus, Trash2
+  Folder, Plus, FolderPlus, Trash2, ArrowLeft
 } from 'lucide-react';
 import {
   extractComicImagesClient,
@@ -847,6 +847,25 @@ export function App() {
                     }
                   }}
                 />
+
+                <div className="flex justify-center pt-2">
+                  <button
+                    onClick={() => {
+                      if (activeBatchSession.status === 'running') {
+                        if (!confirm('Tiến trình dịch đang chạy, bạn có chắc muốn quay về để dịch truyện khác?')) {
+                          return;
+                        }
+                        handleStopBatch();
+                      }
+                      setActiveBatchSession(null);
+                      setActiveJob(null);
+                    }}
+                    className="flex items-center gap-2 px-6 py-3 rounded-2xl bg-zinc-900 border border-zinc-800 text-zinc-300 hover:text-white hover:bg-zinc-800 transition-all text-sm font-bold shadow-lg"
+                  >
+                    <ArrowLeft className="w-4 h-4" />
+                    <span>Dịch truyện khác</span>
+                  </button>
+                </div>
               </div>
             )}
 

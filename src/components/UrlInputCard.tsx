@@ -221,26 +221,29 @@ export const UrlInputCard: React.FC<UrlInputCardProps> = ({
               value={url}
               onChange={(e) => setUrl(e.target.value)}
               placeholder="Dán liên kết truyện để dịch..."
-              className="w-full bg-transparent text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none pr-16"
+              className="flex-1 bg-transparent text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none min-w-0"
             />
-            {url ? (
-              <button
-                type="button"
-                onClick={() => setUrl('')}
-                className="text-zinc-500 hover:text-zinc-300 p-1 mr-1"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={handlePaste}
-                className="text-[11px] font-medium text-zinc-400 hover:text-orange-400 px-2 py-0.5 rounded-full bg-zinc-800/80 border border-zinc-700/50 transition-colors"
-                title="Dán từ khay nhớ tạm"
-              >
-                Dán
-              </button>
-            )}
+            <div className="flex items-center ml-2 flex-shrink-0">
+              {url && (
+                <button
+                  type="button"
+                  onClick={() => setUrl('')}
+                  className="text-zinc-500 hover:text-zinc-300 p-1 mr-1"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+              {!url && (
+                <button
+                  type="button"
+                  onClick={handlePaste}
+                  className="text-[11px] font-medium text-zinc-400 hover:text-orange-400 px-2 py-0.5 rounded-full bg-zinc-800/80 border border-zinc-700/50 transition-colors"
+                  title="Dán từ khay nhớ tạm"
+                >
+                  Dán
+                </button>
+              )}
+            </div>
           </div>
         </form>
 
@@ -482,6 +485,16 @@ export const UrlInputCard: React.FC<UrlInputCardProps> = ({
           <span className="text-[11px] text-zinc-500 block">(hoặc định dạng tương tự)</span>
         </div>
         <div className="flex flex-wrap gap-2">
+          {/* Quick Capture (Camera directly) */}
+          <button
+            type="button"
+            onClick={() => cameraInputRef.current?.click()}
+            className="px-3.5 py-1.5 text-xs font-medium rounded-xl bg-[#141417] hover:bg-[#1c1c21] text-zinc-300 hover:text-zinc-100 border border-zinc-800/80 hover:border-zinc-700 transition-all active:scale-95 flex items-center gap-1.5"
+          >
+            <Camera className="w-3.5 h-3.5 text-zinc-400" />
+            <span>Chụp nhanh</span>
+          </button>
+
           {/* Upload Images / Album */}
           <button
             type="button"
@@ -511,41 +524,6 @@ export const UrlInputCard: React.FC<UrlInputCardProps> = ({
           >
             <FolderArchive className="w-3.5 h-3.5 text-zinc-400" />
             <span>{isProcessingZip ? 'Đang giải nén...' : 'Tải tệp CBZ / ZIP'}</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Section 4: Reading in another app (Đọc trên ứng dụng khác) */}
-      <div className="space-y-2.5 pt-2">
-        <h2 className="text-sm font-semibold text-zinc-200">Đọc trên ứng dụng khác</h2>
-        <div className="flex flex-wrap gap-2">
-          {/* Quick Capture (Camera directly) */}
-          <button
-            type="button"
-            onClick={() => cameraInputRef.current?.click()}
-            className="px-3.5 py-1.5 text-xs font-medium rounded-xl bg-[#141417] hover:bg-[#1c1c21] text-zinc-300 hover:text-zinc-100 border border-zinc-800/80 hover:border-zinc-700 transition-all active:scale-95 flex items-center gap-1.5"
-          >
-            <Camera className="w-3.5 h-3.5 text-zinc-400" />
-            <span>Chụp nhanh</span>
-          </button>
-
-          {/* Screenshot */}
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            className="px-3.5 py-1.5 text-xs font-medium rounded-xl bg-[#141417] hover:bg-[#1c1c21] text-zinc-300 hover:text-zinc-100 border border-zinc-800/80 hover:border-zinc-700 transition-all active:scale-95 flex items-center gap-1.5"
-          >
-            <span>Ảnh chụp màn hình</span>
-          </button>
-
-          {/* URL Sniffer (Read Clipboard automatically) */}
-          <button
-            type="button"
-            onClick={handlePaste}
-            className="px-3.5 py-1.5 text-xs font-medium rounded-xl bg-[#141417] hover:bg-[#1c1c21] text-zinc-300 hover:text-zinc-100 border border-zinc-800/80 hover:border-zinc-700 transition-all active:scale-95 flex items-center gap-1.5"
-          >
-            <Clipboard className="w-3.5 h-3.5 text-zinc-400" />
-            <span>Bắt link tự động</span>
           </button>
         </div>
       </div>
