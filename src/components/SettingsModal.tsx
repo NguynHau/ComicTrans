@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { X, Key, ShieldCheck, HelpCircle, CheckCircle2, AlertTriangle, RefreshCw, ExternalLink, Sparkles, Eye, EyeOff } from 'lucide-react';
 import { testGeminiApiKey } from '../lib/errorUtils';
 import { CURRENT_VERSION } from '../lib/updateChecker';
+import { resetCachedProviderInfo } from '../lib/clientPipeline';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -62,6 +63,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, o
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
+    resetCachedProviderInfo();
     if (apiKey.trim()) {
       localStorage.setItem('GEMINI_API_KEY', apiKey.trim());
     } else {

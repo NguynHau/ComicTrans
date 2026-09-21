@@ -512,15 +512,146 @@ export async function ensureImageAsJpegBase64(imageUrl: string): Promise<string>
   }
 }
 
-// Available Gemini models ordered by priority with automatic fallback on quota/rate-limits
-const CANDIDATE_GEMINI_MODELS = [
-  'gemini-1.5-flash',
+// Dynamic API Provider and Model Configuration
+export interface ProviderInfo {
+  provider: 'gemini' | 'openai';
+  models: string[];
+}
+
+export let cachedProviderInfo: ProviderInfo | null = null;
+
+export const DEFAULT_GEMINI_MODELS = [
+  'gemini-2.5-flash',
   'gemini-2.0-flash',
-  'gemini-3.6-flash',
-  'gemini-3.1-flash-lite',
-  'gemini-3.5-flash',
-  'gemini-3.8-flash',
+  'gemini-1.5-flash',
+  'gemini-1.5-pro',
+  'gemini-2.5-pro'
 ];
+
+export const DEFAULT_OPENAI_MODELS = [
+  'gpt-4o-mini',
+  'gpt-4o'
+];
+
+export function resetCachedProviderInfo(): void {
+  cachedProviderInfo = null;
+}
+
+export async function identifyProviderAndModels(apiKey: string): Promise<ProviderInfo> {
+  const cleanKey = apiKey.trim();
+  if (!cleanKey) {
+    throw new Error('Chưa cung cấp API Key.');
+  }
+
+  // 1. Identify Gemini provider
+  const isLikelyGemini = cleanKey.startsWith('AIzaSy') || cleanKey.length === 39;
+  if (isLikelyGemini) {
+    try {
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${cleanKey}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data && Array.isArray(data.models)) {
+          const discovered: string[] = [];
+          for (const m of data.models) {
+            const name = m.name?.replace(/^models\//, '');
+            if (!name) continue;
+
+            const supportsGenerate = m.supportedGenerationMethods?.includes('generateContent');
+            const isGemini = name.toLowerCase().includes('gemini');
+
+            // Filter out non-multimodal / incompatible models
+            const isExcluded =
+              name.includes('embedding') ||
+              name.includes('tts') ||
+              name.includes('whisper') ||
+              name.includes('imagen') ||
+              name.includes('aqa') ||
+              name.includes('bidi') ||
+              name.includes('vision-preview');
+
+            if (supportsGenerate && isGemini && !isExcluded) {
+              discovered.push(name);
+            }
+          }
+
+          if (discovered.length > 0) {
+            // Sort models intelligently (Flash first for high speed and lower cost)
+            const sorted = discovered.sort((a, b) => {
+              const score = (modelName: string) => {
+                const nameLower = modelName.toLowerCase();
+                if (nameLower.includes('2.5-flash')) return 100;
+                if (nameLower.includes('2.0-flash')) return 90;
+                if (nameLower.includes('1.5-flash')) return 80;
+                if (nameLower.includes('2.5-pro')) return 70;
+                if (nameLower.includes('2.0-pro')) return 60;
+                if (nameLower.includes('1.5-pro')) return 50;
+                if (nameLower.includes('flash')) return 40;
+                if (nameLower.includes('pro')) return 30;
+                return 0;
+              };
+              return score(b) - score(a);
+            });
+
+            const info: ProviderInfo = { provider: 'gemini', models: sorted };
+            cachedProviderInfo = info;
+            return info;
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Identify Gemini dynamically failed, using defaults.', e);
+    }
+
+    const info: ProviderInfo = { provider: 'gemini', models: DEFAULT_GEMINI_MODELS };
+    cachedProviderInfo = info;
+    return info;
+  }
+
+  // 2. Identify OpenAI provider
+  const isLikelyOpenAI = cleanKey.startsWith('sk-');
+  if (isLikelyOpenAI) {
+    try {
+      const res = await fetch('https://api.openai.com/v1/models', {
+        headers: {
+          'Authorization': `Bearer ${cleanKey}`
+        }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && Array.isArray(data.data)) {
+          const discovered: string[] = [];
+          for (const m of data.data) {
+            const name = m.id;
+            // Only include Vision-capable models
+            if (name.startsWith('gpt-4o') || name === 'gpt-4-vision-preview') {
+              discovered.push(name);
+            }
+          }
+
+          if (discovered.length > 0) {
+            const sorted = discovered.sort((a, b) => {
+              if (a.includes('mini') && !b.includes('mini')) return -1;
+              if (!a.includes('mini') && b.includes('mini')) return 1;
+              return b.localeCompare(a);
+            });
+
+            const info: ProviderInfo = { provider: 'openai', models: sorted };
+            cachedProviderInfo = info;
+            return info;
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Identify OpenAI dynamically failed, using defaults.', e);
+    }
+
+    const info: ProviderInfo = { provider: 'openai', models: DEFAULT_OPENAI_MODELS };
+    cachedProviderInfo = info;
+    return info;
+  }
+
+  throw new Error('Định dạng API Key không hợp lệ. Gemini bắt đầu bằng AIzaSy, OpenAI bắt đầu bằng sk-.');
+}
 
 // Direct client-side Gemini Vision OCR & Translation API connector
 
@@ -644,21 +775,84 @@ ${JSON.stringify(items, null, 2)}`;
     }
   });
 
-  for (const model of CANDIDATE_GEMINI_MODELS) {
+  let providerInfo = cachedProviderInfo;
+  if (!providerInfo || !providerInfo.models.length) {
     try {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${cleanApiKey}`;
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: requestBody,
-      });
-      if (!res.ok) continue;
-      const json = await res.json();
-      const text = json?.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
-      const parsed = JSON.parse(text);
-      if (Array.isArray(parsed)) return parsed;
+      providerInfo = await identifyProviderAndModels(cleanApiKey);
     } catch {
-      // try next model
+      providerInfo = { provider: 'gemini', models: DEFAULT_GEMINI_MODELS };
+    }
+  }
+
+  if (providerInfo.provider === 'openai') {
+    for (const model of providerInfo.models) {
+      try {
+        const res = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${cleanApiKey}`
+          },
+          body: JSON.stringify({
+            model: model,
+            response_format: {
+              type: 'json_schema',
+              json_schema: {
+                name: 'translation_snippets',
+                strict: true,
+                schema: {
+                  type: 'object',
+                  properties: {
+                    translations: {
+                      type: 'array',
+                      items: {
+                        type: 'object',
+                        properties: {
+                          id: { type: 'string' },
+                          translated_text: { type: 'string' }
+                        },
+                        required: ['id', 'translated_text'],
+                        additionalProperties: false
+                      }
+                    }
+                  },
+                  required: ['translations'],
+                  additionalProperties: false
+                }
+              }
+            },
+            messages: [{ role: 'user', content: prompt }]
+          })
+        });
+
+        if (!res.ok) continue;
+        const json = await res.json();
+        const text = json?.choices?.[0]?.message?.content || '{}';
+        const parsed = JSON.parse(text);
+        if (parsed && Array.isArray(parsed.translations)) {
+          return parsed.translations;
+        }
+      } catch {
+        // try next model
+      }
+    }
+  } else {
+    for (const model of providerInfo.models) {
+      try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${cleanApiKey}`;
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: requestBody,
+        });
+        if (!res.ok) continue;
+        const json = await res.json();
+        const text = json?.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
+        const parsed = JSON.parse(text);
+        if (Array.isArray(parsed)) return parsed;
+      } catch {
+        // try next model
+      }
     }
   }
 
@@ -748,141 +942,309 @@ Return a valid JSON array of all detected speech bubbles.`;
     }
   });
 
+  let providerInfo = cachedProviderInfo;
+  if (!providerInfo || !providerInfo.models.length) {
+    try {
+      providerInfo = await identifyProviderAndModels(cleanApiKey);
+    } catch (e: any) {
+      throw new Error(`API_PROVIDER_UNRECOGNIZED: ${e.message}`);
+    }
+  }
+
   let lastModelError: any = null;
 
-  // Multi-model fallback loop: tries models sequentially
-  for (const model of CANDIDATE_GEMINI_MODELS) {
-    try {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${cleanApiKey}`;
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: requestBody,
-      });
+  if (providerInfo.provider === 'openai') {
+    const openAiModels = providerInfo.models;
+    let lastOpenAiError: any = null;
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        const rawErrMessage = errorData?.error?.message || `HTTP ${response.status}`;
+    for (const model of openAiModels) {
+      try {
+        const url = 'https://api.openai.com/v1/chat/completions';
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${cleanApiKey}`
+          },
+          body: JSON.stringify({
+            model: model,
+            response_format: {
+              type: 'json_schema',
+              json_schema: {
+                name: 'manga_translation',
+                strict: true,
+                schema: {
+                  type: 'object',
+                  properties: {
+                    bubbles: {
+                      type: 'array',
+                      items: {
+                        type: 'object',
+                        properties: {
+                          text: { type: 'string' },
+                          translation: { type: 'string' },
+                          ymin: { type: 'integer' },
+                          xmin: { type: 'integer' },
+                          ymax: { type: 'integer' },
+                          xmax: { type: 'integer' },
+                          bubble_shape: { type: 'string', enum: ['ellipse', 'rectangle'] },
+                          bg_color: { type: 'string' }
+                        },
+                        required: ['text', 'translation', 'ymin', 'xmin', 'ymax', 'xmax', 'bubble_shape', 'bg_color'],
+                        additionalProperties: false
+                      }
+                    }
+                  },
+                  required: ['bubbles'],
+                  additionalProperties: false
+                }
+              }
+            },
+            messages: [
+              {
+                role: 'user',
+                content: [
+                  { type: 'text', text: prompt },
+                  {
+                    type: 'image_url',
+                    image_url: {
+                      url: `data:image/jpeg;base64,${base64DataOnly}`
+                    }
+                  }
+                ]
+              }
+            ],
+            max_tokens: 2500
+          })
+        });
 
-        // If invalid API key (400 or 403), stop immediately - no other model will succeed
-        if (response.status === 400 || response.status === 403) {
-          throw new Error(`API_KEY_INVALID: ${rawErrMessage}`);
-        }
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          const rawErrMessage = errorData?.error?.message || `HTTP ${response.status}`;
 
-        // If Quota Exceeded (429), log and automatically fall back to next model
-        if (response.status === 429) {
-          console.warn(`Model ${model} returned 429 (Resource Exhausted). Attempting fallback to next model...`);
-          lastModelError = new Error(`API_QUOTA_EXCEEDED: ${rawErrMessage}`);
+          if (response.status === 401 || response.status === 403) {
+            throw new Error(`API_KEY_INVALID: OpenAI API Key không hợp lệ. (${rawErrMessage})`);
+          }
+
+          if (response.status === 429) {
+            console.warn(`OpenAI Model ${model} returned 429. Trying next model...`);
+            lastOpenAiError = new Error(`API_QUOTA_EXCEEDED: ${rawErrMessage}`);
+            continue;
+          }
+
+          lastOpenAiError = new Error(`OpenAI API Error (${model}): ${rawErrMessage}`);
           continue;
         }
 
-        // If model not found (404) or server temporary error (503), try next model
-        if (response.status === 404 || response.status === 503) {
-          console.warn(`Model ${model} returned HTTP ${response.status}. Trying next model...`);
+        const result = await response.json();
+        const textResponse = result?.choices?.[0]?.message?.content || '{}';
+        const parsedData = JSON.parse(textResponse);
+        const bubbles = parsedData.bubbles || [];
+
+        const ocr_results: OCRBoxItem[] = [];
+        const translations: TranslationItem[] = [];
+        const pagePrefix = pageIdentifier ? `p${pageIdentifier}` : `p${Date.now()}`;
+
+        bubbles.forEach((item: any, idx: number) => {
+          const rawYmin = typeof item.ymin === 'number' ? item.ymin : 0;
+          const rawXmin = typeof item.xmin === 'number' ? item.xmin : 0;
+          const rawYmax = typeof item.ymax === 'number' ? item.ymax : 1000;
+          const rawXmax = typeof item.xmax === 'number' ? item.xmax : 1000;
+
+          let ymin = Math.min(rawYmin, rawYmax);
+          let ymax = Math.max(rawYmin, rawYmax);
+          let xmin = Math.min(rawXmin, rawXmax);
+          let xmax = Math.max(rawXmin, rawXmax);
+
+          ymin = Math.max(0, Math.min(1000, ymin));
+          ymax = Math.max(0, Math.min(1000, ymax));
+          xmin = Math.max(0, Math.min(1000, xmin));
+          xmax = Math.max(0, Math.min(1000, xmax));
+
+          if (ymax - ymin < 12) ymax = Math.min(1000, ymin + 20);
+          if (xmax - xmin < 12) xmax = Math.min(1000, xmin + 20);
+
+          const bubbleId = `bubble_${pagePrefix}_${idx}`;
+          const transId = `trans_${pagePrefix}_${idx}`;
+
+          ocr_results.push({
+            id: bubbleId,
+            text: item.text || '',
+            confidence: 1.0,
+            language: sourceLang,
+            bbox: {
+              x: Math.round((xmin / 1000) * W),
+              y: Math.round((ymin / 1000) * H),
+              width: Math.round(((xmax - xmin) / 1000) * W),
+              height: Math.round(((ymax - ymin) / 1000) * H),
+              ymin,
+              xmin,
+              ymax,
+              xmax,
+              // @ts-ignore
+              bubble_shape: item.bubble_shape || 'ellipse',
+              // @ts-ignore
+              bg_color: item.bg_color || '#ffffff',
+            },
+          });
+
+          translations.push({
+            id: transId,
+            source_text: item.text || '',
+            translated_text: item.translation || '',
+            source_language: sourceLang,
+            target_language: targetLang,
+          });
+        });
+
+        return { ocr_results, translations, model_used: model, jpegBase64 };
+      } catch (err: any) {
+        if (
+          err.message?.includes('API_KEY_INVALID') ||
+          err.message?.includes('API_KEY_MISSING')
+        ) {
+          throw err;
+        }
+        lastOpenAiError = err;
+      }
+    }
+
+    throw lastOpenAiError || new Error('API_QUOTA_EXCEEDED: Tất cả các phiên bản model OpenAI đều tạm thời quá tải hoặc hết hạn mức.');
+  } else {
+    // Multi-model fallback loop: tries Gemini models sequentially
+    for (const model of providerInfo.models) {
+      try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${cleanApiKey}`;
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: requestBody,
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          const rawErrMessage = errorData?.error?.message || `HTTP ${response.status}`;
+
+          // If invalid API key (400 or 403), stop immediately - no other model will succeed
+          if (response.status === 400 || response.status === 403) {
+            throw new Error(`API_KEY_INVALID: ${rawErrMessage}`);
+          }
+
+          // If Quota Exceeded (429), log and automatically fall back to next model
+          if (response.status === 429) {
+            console.warn(`Model ${model} returned 429 (Resource Exhausted). Attempting fallback to next model...`);
+            lastModelError = new Error(`API_QUOTA_EXCEEDED: ${rawErrMessage}`);
+            continue;
+          }
+
+          // If model not found (404) or server temporary error (503), try next model
+          if (response.status === 404 || response.status === 503) {
+            console.warn(`Model ${model} returned HTTP ${response.status}. Trying next model...`);
+            lastModelError = new Error(`Gemini API Error (${model}): ${rawErrMessage}`);
+            continue;
+          }
+
           lastModelError = new Error(`Gemini API Error (${model}): ${rawErrMessage}`);
           continue;
         }
 
-        lastModelError = new Error(`Gemini API Error (${model}): ${rawErrMessage}`);
-        continue;
-      }
+        // Success with this model!
+        const result = await response.json();
+        const textResponse = result?.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
 
-      // Success with this model!
-      const result = await response.json();
-      const textResponse = result?.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
+        // Check if blocked by Google safety filters
+        if (result?.candidates?.[0]?.finishReason === 'SAFETY') {
+          throw new Error('AI_SAFETY_BLOCKED: Trang truyện bị bộ lọc an toàn của Google AI chặn.');
+        }
 
-      // Check if blocked by Google safety filters
-      if (result?.candidates?.[0]?.finishReason === 'SAFETY') {
-        throw new Error('AI_SAFETY_BLOCKED: Trang truyện bị bộ lọc an toàn của Google AI chặn.');
-      }
+        let items: any[] = [];
+        try {
+          items = JSON.parse(textResponse);
+        } catch (e) {
+          console.error('Failed to parse Gemini output:', textResponse);
+          throw new Error('AI_PARSE_ERROR: Phản hồi từ Gemini không đúng định dạng JSON.');
+        }
 
-      let items: any[] = [];
-      try {
-        items = JSON.parse(textResponse);
-      } catch (e) {
-        console.error('Failed to parse Gemini output:', textResponse);
-        throw new Error('AI_PARSE_ERROR: Phản hồi từ Gemini không đúng định dạng JSON.');
-      }
+        if (!Array.isArray(items)) {
+          items = [];
+        }
 
-      if (!Array.isArray(items)) {
-        items = [];
-      }
+        const ocr_results: OCRBoxItem[] = [];
+        const translations: TranslationItem[] = [];
+        const pagePrefix = pageIdentifier ? `p${pageIdentifier}` : `p${Date.now()}`;
 
-      const ocr_results: OCRBoxItem[] = [];
-      const translations: TranslationItem[] = [];
-      const pagePrefix = pageIdentifier ? `p${pageIdentifier}` : `p${Date.now()}`;
+        items.forEach((item, idx) => {
+          const rawYmin = typeof item.ymin === 'number' ? item.ymin : 0;
+          const rawXmin = typeof item.xmin === 'number' ? item.xmin : 0;
+          const rawYmax = typeof item.ymax === 'number' ? item.ymax : 1000;
+          const rawXmax = typeof item.xmax === 'number' ? item.xmax : 1000;
 
-      items.forEach((item, idx) => {
-        const rawYmin = typeof item.ymin === 'number' ? item.ymin : 0;
-        const rawXmin = typeof item.xmin === 'number' ? item.xmin : 0;
-        const rawYmax = typeof item.ymax === 'number' ? item.ymax : 1000;
-        const rawXmax = typeof item.xmax === 'number' ? item.xmax : 1000;
+          // Ensure ymin < ymax and xmin < xmax
+          let ymin = Math.min(rawYmin, rawYmax);
+          let ymax = Math.max(rawYmin, rawYmax);
+          let xmin = Math.min(rawXmin, rawXmax);
+          let xmax = Math.max(rawXmin, rawXmax);
 
-        // Ensure ymin < ymax and xmin < xmax
-        let ymin = Math.min(rawYmin, rawYmax);
-        let ymax = Math.max(rawYmin, rawYmax);
-        let xmin = Math.min(rawXmin, rawXmax);
-        let xmax = Math.max(rawXmin, rawXmax);
+          // Clamp to 0..1000
+          ymin = Math.max(0, Math.min(1000, ymin));
+          ymax = Math.max(0, Math.min(1000, ymax));
+          xmin = Math.max(0, Math.min(1000, xmin));
+          xmax = Math.max(0, Math.min(1000, xmax));
 
-        // Clamp to 0..1000
-        ymin = Math.max(0, Math.min(1000, ymin));
-        ymax = Math.max(0, Math.min(1000, ymax));
-        xmin = Math.max(0, Math.min(1000, xmin));
-        xmax = Math.max(0, Math.min(1000, xmax));
+          // Ensure minimum speech bubble size
+          if (ymax - ymin < 12) ymax = Math.min(1000, ymin + 20);
+          if (xmax - xmin < 12) xmax = Math.min(1000, xmin + 20);
 
-        // Ensure minimum speech bubble size
-        if (ymax - ymin < 12) ymax = Math.min(1000, ymin + 20);
-        if (xmax - xmin < 12) xmax = Math.min(1000, xmin + 20);
+          const bubbleId = `bubble_${pagePrefix}_${idx}`;
+          const transId = `trans_${pagePrefix}_${idx}`;
 
-        const bubbleId = `bubble_${pagePrefix}_${idx}`;
-        const transId = `trans_${pagePrefix}_${idx}`;
+          ocr_results.push({
+            id: bubbleId,
+            text: item.text || '',
+            confidence: 1.0,
+            language: sourceLang,
+            bbox: {
+              x: Math.round((xmin / 1000) * W),
+              y: Math.round((ymin / 1000) * H),
+              width: Math.round(((xmax - xmin) / 1000) * W),
+              height: Math.round(((ymax - ymin) / 1000) * H),
+              ymin,
+              xmin,
+              ymax,
+              xmax,
+              // @ts-ignore
+              bubble_shape: item.bubble_shape || 'ellipse',
+              // @ts-ignore
+              bg_color: item.bg_color || '#ffffff',
+            },
+          });
 
-        ocr_results.push({
-          id: bubbleId,
-          text: item.text || '',
-          confidence: 1.0,
-          language: sourceLang,
-          bbox: {
-            x: Math.round((xmin / 1000) * W),
-            y: Math.round((ymin / 1000) * H),
-            width: Math.round(((xmax - xmin) / 1000) * W),
-            height: Math.round(((ymax - ymin) / 1000) * H),
-            ymin,
-            xmin,
-            ymax,
-            xmax,
-            // @ts-ignore
-            bubble_shape: item.bubble_shape || 'ellipse',
-            // @ts-ignore
-            bg_color: item.bg_color || '#ffffff',
-          },
+          translations.push({
+            id: transId,
+            source_text: item.text || '',
+            translated_text: item.translation || '',
+            source_language: sourceLang,
+            target_language: targetLang,
+          });
         });
 
-        translations.push({
-          id: transId,
-          source_text: item.text || '',
-          translated_text: item.translation || '',
-          source_language: sourceLang,
-          target_language: targetLang,
-        });
-      });
-
-      return { ocr_results, translations, model_used: model, jpegBase64 };
-    } catch (err: any) {
-      if (
-        err.message?.includes('API_KEY_INVALID') ||
-        err.message?.includes('AI_SAFETY_BLOCKED') ||
-        err.message?.includes('API_KEY_MISSING')
-      ) {
-        throw err;
+        return { ocr_results, translations, model_used: model, jpegBase64 };
+      } catch (err: any) {
+        if (
+          err.message?.includes('API_KEY_INVALID') ||
+          err.message?.includes('AI_SAFETY_BLOCKED') ||
+          err.message?.includes('API_KEY_MISSING')
+        ) {
+          throw err;
+        }
+        lastModelError = err;
       }
-      lastModelError = err;
     }
-  }
 
-  throw lastModelError || new Error('API_QUOTA_EXCEEDED: Tất cả các phiên bản model Gemini đều tạm thời quá tải hoặc hết hạn mức.');
+    throw lastModelError || new Error('API_QUOTA_EXCEEDED: Tất cả các phiên bản model Gemini đều tạm thời quá tải hoặc hết hạn mức.');
+  }
 }
 
 // Sample bubble background color to determine if speech bubble is dark, white, or light halftone

@@ -31,6 +31,7 @@ import {
   runOcrAndTranslationClient,
   renderInpaintedTranslatedImageClient,
   ensureImageAsJpegBase64,
+  resetCachedProviderInfo,
 } from './lib/clientPipeline';
 import { classifyPipelineError, testGeminiApiKey } from './lib/errorUtils';
 import { checkForAppUpdate, applyAppUpdate, CURRENT_VERSION, CheckUpdateResult } from './lib/updateChecker';
@@ -792,6 +793,7 @@ export function App() {
 
   const handleSaveSettings = (e: React.FormEvent) => {
     e.preventDefault();
+    resetCachedProviderInfo();
     if (settingsApiKey.trim()) {
       localStorage.setItem('GEMINI_API_KEY', settingsApiKey.trim());
     } else {
