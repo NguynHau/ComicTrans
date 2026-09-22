@@ -11,6 +11,7 @@ import { FolderChaptersModal } from './components/FolderChaptersModal';
 import { ApiDocsModal } from './components/ApiDocsModal';
 import { SettingsModal } from './components/SettingsModal';
 import { UpdateModal } from './components/UpdateModal';
+import { BatchFolderSelectionModal } from './components/BatchFolderSelectionModal';
 import {
   MangaJob,
   MangaPage,
@@ -88,6 +89,13 @@ export function App() {
 
   const [isClearingCache, setIsClearingCache] = useState(false);
   const [cacheClearedSuccess, setCacheClearedSuccess] = useState(false);
+
+  const folderSelectionResolverRef = useRef<{
+    resolve: (folder: MangaFolder) => void;
+    reject: (err: any) => void;
+  } | null>(null);
+  const [folderSelectionModalOpen, setFolderSelectionModalOpen] = useState(false);
+  const [seriesNameForFolderSelection, setSeriesNameForFolderSelection] = useState('');
 
   const handleClearCache = async () => {
     if (confirm('Bạn có chắc muốn giải phóng hoàn toàn bộ nhớ đệm dịch thuật? Hành động này sẽ xoá toàn bộ dữ liệu ảnh dịch tạm thời trong trình duyệt.')) {
@@ -297,6 +305,13 @@ export function App() {
             setActiveBatchSession({ ...session });
           },
           shouldAbort: () => abortBatchRef.current,
+          onRequireFolderSelection: (seriesName) => {
+            setSeriesNameForFolderSelection(seriesName);
+            setFolderSelectionModalOpen(true);
+            return new Promise<MangaFolder>((resolve, reject) => {
+              folderSelectionResolverRef.current = { resolve, reject };
+            });
+          },
         },
         resumeSession
       );
@@ -1381,6 +1396,27 @@ export function App() {
             </form>
           </div>
         </div>
+      )}
+
+      {/* Batch Translation Folder Selection Popup */}
+      {folderSelectionModalOpen && (
+        <BatchFolderSelectionModal
+          seriesName={seriesNameForFolderSelection}
+          onSelect={(selectedFolder) => {
+            setFolderSelectionModalOpen(false);
+            if (folderSelectionResolverRef.current) {
+              folderSelectionResolverRef.current.resolve(selectedFolder);
+              folderSelectionResolverRef.current = null;
+            }
+          }}
+          onCancel={() => {
+            setFolderSelectionModalOpen(false);
+            if (folderSelectionResolverRef.current) {
+              folderSelectionResolverRef.current.reject(new Error('User cancelled folder selection'));
+              folderSelectionResolverRef.current = null;
+            }
+          }}
+        />
       )}
     </div>
   );

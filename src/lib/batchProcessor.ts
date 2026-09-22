@@ -7,6 +7,7 @@ import {
 import {
   saveRecentItemToStorage,
   getRecentItemsFromStorage,
+  getFoldersFromStorage,
   findOrCreateFolderForSeries,
   saveBatchSession,
   generatePageCacheKey,
@@ -24,6 +25,7 @@ import {
   MangaJob,
   MangaPage,
   RecentItem,
+  MangaFolder,
   BatchTranslationSession,
   BatchChapterSummary,
   DetailedError,
@@ -37,6 +39,7 @@ export interface BatchCallbacks {
   onChapterCompleted: (summary: BatchChapterSummary, recentItem: RecentItem) => void;
   onBatchFinished: (session: BatchTranslationSession) => void;
   shouldAbort: () => boolean;
+  onRequireFolderSelection?: (seriesName: string) => Promise<MangaFolder>;
 }
 
 /**
@@ -86,16 +89,33 @@ export async function runBatchTranslationLoop(
   const seriesName = analysis.seriesName || 'Bộ truyện mới';
   const seriesBaseUrl = extractSeriesBaseUrl(initialUrl);
 
-  // 1. Find or create the manga folder for this series
-  const folder = await findOrCreateFolderForSeries(seriesName, seriesBaseUrl);
+  // 1. Determine folder: if resuming with a valid selected folder, use it. Otherwise, set to 'pending' placeholder.
+  let folder: MangaFolder;
+  if (existingSession && existingSession.folderId && existingSession.folderId !== 'pending') {
+    const folders = await getFoldersFromStorage();
+    const found = folders.find((f) => f.id === existingSession.folderId);
+    if (found) {
+      folder = found;
+    } else {
+      folder = {
+        id: existingSession.folderId,
+        name: seriesName,
+        createdAt: new Date().toISOString(),
+      };
+    }
+  } else {
+    folder = {
+      id: 'pending',
+      name: 'Chưa chọn thư mục',
+      createdAt: new Date().toISOString(),
+    };
+  }
 
   // 2. Query IndexedDB for existing saved chapters of this folder/series
   const existingRecents = await getRecentItemsFromStorage();
-  const folderChapters = existingRecents.filter(
-    (r) =>
-      r.folderId === folder.id ||
-      (r.folderName && r.folderName.trim().toLowerCase() === seriesName.trim().toLowerCase())
-  );
+  const folderChapters = folder.id !== 'pending'
+    ? existingRecents.filter((r) => r.folderId === folder.id)
+    : [];
 
   const completedInStorage = folderChapters.filter(
     (r) => r.completedPages > 0 && r.completedPages === r.totalPages && r.job?.status !== 'failed'
@@ -533,7 +553,7 @@ export async function runBatchTranslationLoop(
 
     // Step E: STRICT VERIFICATION: ONLY mark as COMPLETED if all pages completed successfully
     if (allPagesSucceeded) {
-      const recentItem: RecentItem = {
+      let recentItem: RecentItem = {
         id: jobId,
         title: chapterTitle,
         folderId: folder.id,
@@ -552,6 +572,35 @@ export async function runBatchTranslationLoop(
       };
 
       await saveRecentItemToStorage(recentItem);
+
+      // Ask for folder selection if it is still pending
+      if (folder.id === 'pending' && callbacks.onRequireFolderSelection) {
+        await addLog(session, `[PENDING] Chương "${chapterTitle}" đã dịch xong. Đang chờ bạn chọn hoặc tạo thư mục để lưu bộ truyện...`, callbacks);
+        try {
+          const selectedFolder = await callbacks.onRequireFolderSelection(seriesName);
+          folder = selectedFolder;
+          session.folderId = folder.id;
+
+          // Update recentItem with selected folder info
+          recentItem.folderId = folder.id;
+          recentItem.folderName = folder.name;
+          await saveRecentItemToStorage(recentItem);
+
+          await addLog(session, `[SUCCESS] Đã chọn thư mục "${folder.name}". Các chương sau sẽ tự động lưu vào đây.`, callbacks);
+        } catch (folderErr) {
+          console.error('Folder selection cancelled/failed:', folderErr);
+          // Fallback to auto-creating folder if selection is cancelled/failed so we don't get stuck
+          const fallbackFolder = await findOrCreateFolderForSeries(seriesName, seriesBaseUrl);
+          folder = fallbackFolder;
+          session.folderId = folder.id;
+
+          recentItem.folderId = folder.id;
+          recentItem.folderName = folder.name;
+          await saveRecentItemToStorage(recentItem);
+
+          await addLog(session, `[INFO] Tự động tạo thư mục mặc định "${folder.name}".`, callbacks);
+        }
+      }
 
       const summary: BatchChapterSummary = {
         chapterNumber: chapterNum,
